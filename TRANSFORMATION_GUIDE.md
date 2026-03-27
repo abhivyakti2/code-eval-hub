@@ -63,17 +63,13 @@ app/
 |---|---|---|
 | Server Actions (`'use server'`) | `app/lib/actions.ts` | Replace invoice CRUD with GitHub fetch + RAG trigger actions |
 | Prisma ORM (replaces direct SQL) | `app/lib/data.ts` | Keep query shapes but implement with `prisma.*` (drop the `postgres` package entirely) |
-| Zod validation | `actions.ts` form validation | Validate GitHub URL input |
-| URL-based search params | `invoices/page.tsx` | Drive repo search and pagination via URL params |
-| Debounced `<Search />` | `app/ui/search.tsx` | Reuse as-is for repo search input |
-| Pagination component | `app/ui/invoices/pagination.tsx` | Reuse as-is for commit browsing |
+| Zod validation | `actions.ts` form validation | Validate GitHub URL input on dashboard |
 | Suspense + loading skeletons | `(overview)/loading.tsx` + `skeletons.tsx` | Use for async RAG summary streams |
 | `revalidatePath` / `revalidateTag` | `actions.ts` | Trigger after new commit detection |
 | `notFound()` / `error.tsx` | `invoices/[id]/edit/` | Reuse for missing repo / API errors |
 | NextAuth credentials flow | `auth.ts` + `auth.config.ts` | Keep unchanged — users still log in |
-| Dashboard layout (SideNav) | `dashboard/layout.tsx` | Replace nav items with new sections |
+| Dashboard layout (SideNav) | `dashboard/layout.tsx` | Simplified nav (no separate repos list page) |
 | `Promise.all` parallel fetches | `data.ts fetchCardData` | Parallel GitHub API calls |
-| `generatePagination` util | `utils.ts` | Reuse pagination logic for commits |
 
 ---
 
@@ -83,11 +79,11 @@ app/
 ┌──────────────────────────────────────────────────────────────┐
 │                     Browser (Next.js SSR)                    │
 │  ┌─────────────────────────────────────────────────────────┐ │
-│  │  /dashboard/repos — single-page evaluator UI           │ │
-│  │   ├── Repo URL input                                    │ │
-│  │   ├── Action buttons (summary / questions / compare)   │ │
+│  │  /dashboard — single-page evaluator UI                 │ │
+│  │   ├── Repo URL input (direct on dashboard)             │ │
+│  │   ├── Feature action buttons (summary/questions/etc)   │ │
 │  │   ├── Results panel (streamed via Suspense)             │ │
-│  │   └── Chat section + Chat history sidebar              │ │
+│  │   └── Chat section (one chat per repo per user)        │ │
 │  └─────────────────────────────────────────────────────────┘ │
 └──────────────────────────────┬───────────────────────────────┘
                                │ Server Actions / Route Handlers
@@ -282,6 +278,10 @@ model Chat {
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
   messages     Message[]
+
+  @@unique([userId, repositoryId])
+  // ↑ Ensures one chat per repo per user.
+  //   Query with: prisma.chat.findUnique({ where: { userId_repositoryId: { userId, repositoryId } } })
 }
 
 enum MessageRole {
@@ -365,10 +365,8 @@ rm    public/hero-mobile.png
 ### Step 1.2 — Keep (do not delete)
 
 - `app/lib/utils.ts` — keep `generatePagination` and add new helpers
-- `app/ui/search.tsx` — reuse as-is
-- `app/ui/invoices/pagination.tsx` → **RENAME** to `app/ui/pagination.tsx`
 - `app/ui/dashboard/sidenav.tsx` — keep, update nav links
-- `app/ui/dashboard/nav-links.tsx` — update links
+- `app/ui/dashboard/nav-links.tsx` — update links (simplified nav)
 - `app/ui/button.tsx` — keep as-is
 - `app/ui/skeletons.tsx` — keep, add new skeleton variants
 - `app/lib/actions.ts` — repurpose (remove invoice CRUD, keep auth; swap `postgres` → Prisma)
@@ -377,6 +375,8 @@ rm    public/hero-mobile.png
 - `auth.ts` — **MODIFY**: swap `postgres` import for Prisma (see Phase 3)
 - `auth.config.ts` — keep unchanged
 - `next.config.ts`, `tailwind.config.ts`, `tsconfig.json` — keep unchanged
+
+Note: We are **not** keeping `app/ui/search.tsx` or `app/ui/invoices/pagination.tsx` since the new architecture has no separate repo list page or search functionality.
 
 ### Step 1.3 — Rename dashboard overview route
 
@@ -389,11 +389,11 @@ mv app/dashboard/\(overview\) app/dashboard/\(home\)
 ### Step 1.4 — Create new directories
 
 ```bash
-mkdir -p app/dashboard/repos
-mkdir -p app/dashboard/repos/[id]
-mkdir -p app/ui/repos
+mkdir -p app/ui/dashboard/repo-input
 mkdir -p app/lib
 ```
+
+Note: We're **not** creating `app/dashboard/repos` or separate repo pages. The dashboard will have the repo URL input and chat directly on the main dashboard page.
 
 ---
 
@@ -901,7 +901,7 @@ export async function addRepository(
     });
 
     revalidateTag('repositories');
-    revalidatePath('/dashboard/repos');
+    revalidatePath('/dashboard');
     return { repoId: created.id };
   } catch (err) {
     console.error(err);
@@ -912,7 +912,7 @@ export async function addRepository(
 export async function deleteRepository(id: string) {
   await prisma.repository.delete({ where: { id } });
   revalidateTag('repositories');
-  revalidatePath('/dashboard/repos');
+  revalidatePath('/dashboard');
 }
 
 // ── RAG Trigger Actions ───────────────────────────────────────
@@ -942,7 +942,7 @@ export async function triggerRepoIngestion(repoId: string) {
     data: { lastIngestedAt: new Date(), lastCommitSha: data.latest_sha },
   });
   revalidateTag(`repo-${repoId}`);
-  revalidatePath(`/dashboard/repos/${repoId}`);
+  revalidatePath('/dashboard');
 }
 
 export async function generateRepoSummary(repoId: string): Promise<string> {
@@ -1008,22 +1008,28 @@ export async function generateQuestions(
 // Revalidation strategy used throughout actions.ts:
 //   revalidateTag('repositories')         → invalidate all repo list caches
 //   revalidateTag(`repo-${repoId}`)       → invalidate single-repo caches
-//   revalidatePath('/dashboard/repos')    → force full refresh of list page SSR
-//   revalidatePath(`/dashboard/repos/${repoId}`) → force full refresh of detail page SSR
+//   revalidatePath('/dashboard')          → force full refresh of dashboard page SSR
 //
 // Use BOTH revalidateTag + revalidatePath so that both cached fetches (tagged
 // with unstable_cache) and the router cache (page segments) are cleared.
 
-export async function createChat(
+export async function getOrCreateChat(
   userId: string,
-  repositoryId: string,
-  title: string
+  repositoryId: string
 ): Promise<string> {
-  const chat = await prisma.chat.create({
-    data: { userId, repositoryId, title },
+  // One chat per repo per user - find existing or create new
+  let chat = await prisma.chat.findUnique({
+    where: { userId_repositoryId: { userId, repositoryId } },
   });
+
+  if (!chat) {
+    chat = await prisma.chat.create({
+      data: { userId, repositoryId, title: 'Repository Chat' },
+    });
+  }
+
   revalidateTag(`repo-${repositoryId}`);
-  revalidatePath(`/dashboard/repos/${repositoryId}`);
+  revalidatePath('/dashboard');
   return chat.id;
 }
 
@@ -1052,7 +1058,7 @@ export async function sendChatMessage(
   });
 
   revalidateTag(`repo-${repoId}`);
-  revalidatePath(`/dashboard/repos/${repoId}`);
+  revalidatePath('/dashboard');
   return data.answer as string;
 }
 
@@ -1083,17 +1089,13 @@ Docs: Next.js Server Actions & cache invalidation (`revalidatePath`, `revalidate
 
 import {
   HomeIcon,
-  CodeBracketIcon,
-  ChatBubbleLeftRightIcon,
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
 
 const links = [
-  { name: 'Home',         href: '/dashboard',       icon: HomeIcon },
-  { name: 'Repositories', href: '/dashboard/repos',  icon: CodeBracketIcon },
-  { name: 'Chats',        href: '/dashboard/chats',  icon: ChatBubbleLeftRightIcon },
+  { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
 ];
 
 export default function NavLinks() {
@@ -1108,7 +1110,7 @@ export default function NavLinks() {
             href={link.href}
             className={clsx(
               'flex h-[48px] grow items-center justify-center gap-2 rounded-md bg-gray-50 p-3 text-sm font-medium hover:bg-sky-100 hover:text-blue-600 md:flex-none md:justify-start md:p-2 md:px-3',
-              { 'bg-sky-100 text-blue-600': pathname === link.href || pathname.startsWith(link.href + '/') }
+              { 'bg-sky-100 text-blue-600': pathname === link.href }
             )}
           >
             <LinkIcon className="w-6" />
@@ -1120,6 +1122,8 @@ export default function NavLinks() {
   );
 }
 ```
+
+Note: We've simplified the navigation to have only a Dashboard link. The repo URL input and chat will be directly on the dashboard.
 
 ### Step 4.2 — Update root layout metadata
 
@@ -1166,661 +1170,261 @@ export default function Home() {
 }
 ```
 
-### Step 4.4 — Update dashboard overview
+### Step 4.4 — Update dashboard page with repo URL input and chat
 
 **File:** `app/dashboard/(home)/page.tsx` — REPLACE with:
 
 ```typescript
 import { auth } from '@/auth';
-import Link from 'next/link';
-import { CodeBracketIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
+import { Suspense } from 'react';
+import RepoEvaluatorSection from '@/app/ui/dashboard/repo-evaluator';
 
 export default async function DashboardPage() {
   const session = await auth();
+  const userId = session!.user!.id as string;
+
   return (
-    <main>
+    <main className="w-full">
       <h1 className="mb-4 text-xl font-semibold md:text-2xl">
         Welcome back, {session?.user?.name ?? 'User'} 👋
       </h1>
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-        <Link
-          href="/dashboard/repos"
-          className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm hover:bg-blue-50"
-        >
-          <CodeBracketIcon className="h-10 w-10 text-blue-500" />
-          <div>
-            <p className="font-semibold">Repositories</p>
-            <p className="text-sm text-gray-500">Analyse and evaluate GitHub repos</p>
-          </div>
-        </Link>
-        <Link
-          href="/dashboard/chats"
-          className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm hover:bg-blue-50"
-        >
-          <ChatBubbleLeftRightIcon className="h-10 w-10 text-blue-500" />
-          <div>
-            <p className="font-semibold">Chats</p>
-            <p className="text-sm text-gray-500">RAG-powered repository chat history</p>
-          </div>
-        </Link>
-      </div>
+      <p className="mb-6 text-gray-600">
+        Enter a GitHub repository URL below to start analysing and chatting with the codebase.
+      </p>
+      <Suspense fallback={<div>Loading...</div>}>
+        <RepoEvaluatorSection userId={userId} />
+      </Suspense>
     </main>
   );
 }
 ```
 
-### Step 4.5 — Create repository list page
+Note: All functionality is now on the dashboard. No separate repos list page.
 
-**File:** `app/dashboard/repos/page.tsx` — CREATE:
+### Step 4.5 — Create main repo evaluator component
 
-```typescript
-import { Suspense } from 'react';
-import { auth } from '@/auth';
-import Search from '@/app/ui/search';
-import Pagination from '@/app/ui/pagination';
-import RepoTable from '@/app/ui/repos/table';
-import RepoTableSkeleton from '@/app/ui/repos/table-skeleton';
-import AddRepoForm from '@/app/ui/repos/add-form';
-import { fetchRepositoryPages } from '@/app/lib/data';
-
-export default async function ReposPage({
-  searchParams,
-}: {
-  searchParams?: { query?: string; page?: string };
-}) {
-  const session = await auth();
-  const userId = session!.user!.id as string;
-  const query = searchParams?.query ?? '';
-  const currentPage = Number(searchParams?.page ?? 1);
-  const totalPages = await fetchRepositoryPages(userId, query);
-
-  return (
-    <div className="w-full">
-      <h1 className="mb-4 text-xl font-semibold md:text-2xl">Repositories</h1>
-      <AddRepoForm userId={userId} />
-      <div className="mt-4 flex items-center justify-between gap-2">
-        <Search placeholder="Search repositories..." />
-      </div>
-      <Suspense key={query + currentPage} fallback={<RepoTableSkeleton />}>
-        <RepoTable userId={userId} query={query} currentPage={currentPage} />
-      </Suspense>
-      <div className="mt-5 flex w-full justify-center">
-        <Pagination totalPages={totalPages} />
-      </div>
-    </div>
-  );
-}
-```
-
-### Step 4.6 — Create repository detail page (single-page evaluator)
-
-**File:** `app/dashboard/repos/[id]/page.tsx` — CREATE:
-
-```typescript
-import { Suspense } from 'react';
-import { notFound } from 'next/navigation';
-import { auth } from '@/auth';
-import { fetchRepositoryById, fetchContributorsByRepo, fetchChatsByRepo } from '@/app/lib/data';
-import RepoHeader from '@/app/ui/repos/repo-header';
-import ContributorPanel from '@/app/ui/repos/contributor-panel';
-import ChatSection from '@/app/ui/repos/chat-section';
-import ChatSidebar from '@/app/ui/repos/chat-sidebar';
-
-export default async function RepoDetailPage({ params }: { params: { id: string } }) {
-  const session = await auth();
-  const userId = session!.user!.id as string;
-
-  const [repo, contributors, chats] = await Promise.all([
-    fetchRepositoryById(params.id),
-    fetchContributorsByRepo(params.id),
-    fetchChatsByRepo(userId, params.id),
-  ]);
-
-  if (!repo) notFound();
-
-  return (
-    <div className="flex h-full gap-4">
-      {/* Chat history sidebar */}
-      <aside className="hidden w-64 flex-shrink-0 md:block">
-        <ChatSidebar chats={chats} repoId={repo.id} userId={userId} />
-      </aside>
-
-      {/* Main content */}
-      <div className="flex flex-1 flex-col gap-6 overflow-y-auto">
-        <RepoHeader repo={repo} />
-        <ContributorPanel
-          repoId={repo.id}
-          contributors={contributors}
-          userId={userId}
-        />
-        <ChatSection repoId={repo.id} userId={userId} chats={chats} />
-      </div>
-    </div>
-  );
-}
-```
-
-### Step 4.7 — Create UI components for repos
-
-Create the following files with the code below.
-
----
-
-**File:** `app/ui/repos/add-form.tsx` — CREATE:
+**File:** `app/ui/dashboard/repo-evaluator.tsx` — CREATE:
 
 ```typescript
 'use client';
 
+import { useState } from 'react';
 import { useActionState } from 'react';
-import { addRepository, AddRepoState } from '@/app/lib/actions';
+import { addRepository, AddRepoState, getOrCreateChat } from '@/app/lib/actions';
 import { Button } from '@/app/ui/button';
+import ChatSection from '@/app/ui/dashboard/chat-section';
+import FeatureButtons from '@/app/ui/dashboard/feature-buttons';
 
-export default function AddRepoForm({ userId }: { userId: string }) {
+export default function RepoEvaluatorSection({ userId }: { userId: string }) {
+  const [activeRepoId, setActiveRepoId] = useState<string | null>(null);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+
   const addRepoWithUser = addRepository.bind(null, userId);
   const [state, dispatch] = useActionState<AddRepoState, FormData>(
     addRepoWithUser,
     {}
   );
 
+  async function handleRepoAdded(formData: FormData) {
+    const result = await dispatch(formData);
+    if (result.repoId) {
+      setActiveRepoId(result.repoId);
+      // Auto-create or get the chat for this repo
+      const chatId = await getOrCreateChat(userId, result.repoId);
+      setActiveChatId(chatId);
+    }
+  }
+
   return (
-    <form action={dispatch} className="flex gap-2">
-      <input
-        type="url"
-        name="github_url"
-        placeholder="https://github.com/owner/repo"
-        required
-        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-      <Button type="submit">Add Repo</Button>
-      {state.error && (
-        <p className="mt-1 text-sm text-red-500">{state.error}</p>
+    <div className="flex flex-col gap-6">
+      {/* Repo URL Input */}
+      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-lg font-semibold">Repository URL</h2>
+        <form action={handleRepoAdded} className="flex gap-2">
+          <input
+            type="url"
+            name="github_url"
+            placeholder="https://github.com/owner/repo"
+            required
+            className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <Button type="submit">Load Repo</Button>
+        </form>
+        {state.error && (
+          <p className="mt-2 text-sm text-red-500">{state.error}</p>
+        )}
+      </div>
+
+      {/* Feature Buttons - Only show when repo is loaded */}
+      {activeRepoId && (
+        <FeatureButtons repoId={activeRepoId} userId={userId} />
       )}
-    </form>
-  );
-}
-```
 
----
-
-**File:** `app/ui/repos/table.tsx` — CREATE:
-
-```typescript
-import Link from 'next/link';
-import { fetchFilteredRepositories } from '@/app/lib/data';
-import DeleteRepoButton from './delete-button';
-import { StarIcon, CodeBracketIcon } from '@heroicons/react/24/outline';
-
-export default async function RepoTable({
-  userId,
-  query,
-  currentPage,
-}: {
-  userId: string;
-  query: string;
-  currentPage: number;
-}) {
-  const repos = await fetchFilteredRepositories(userId, query, currentPage);
-
-  return (
-    <div className="mt-6 flow-root">
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-300">
-          <thead>
-            <tr>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Repository</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Language</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Stars</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Added</th>
-              <th className="px-4 py-3"><span className="sr-only">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 bg-white">
-            {repos.map((repo) => (
-              <tr key={repo.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3">
-                  <Link href={`/dashboard/repos/${repo.id}`} className="font-medium text-blue-600 hover:underline">
-                    {repo.owner}/{repo.name}
-                  </Link>
-                  {repo.description && (
-                    <p className="text-xs text-gray-500 truncate max-w-xs">{repo.description}</p>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600">
-                  {repo.language ?? '—'}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600">
-                  <span className="flex items-center gap-1">
-                    <StarIcon className="h-4 w-4 text-yellow-400" />
-                    {repo.stars}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-500">
-                  {new Date(repo.created_at).toLocaleDateString()}
-                </td>
-                <td className="px-4 py-3">
-                  <DeleteRepoButton id={repo.id} />
-                </td>
-              </tr>
-            ))}
-            {repos.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
-                  No repositories found. Add one above.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-```
-
----
-
-**File:** `app/ui/repos/delete-button.tsx` — CREATE:
-
-```typescript
-'use client';
-
-import { TrashIcon } from '@heroicons/react/24/outline';
-import { deleteRepository } from '@/app/lib/actions';
-
-export default function DeleteRepoButton({ id }: { id: string }) {
-  const deleteWithId = deleteRepository.bind(null, id);
-  return (
-    <form action={deleteWithId}>
-      <button
-        type="submit"
-        className="rounded-md p-2 text-red-500 hover:bg-red-50"
-        aria-label="Delete repository"
-      >
-        <TrashIcon className="h-4 w-4" />
-      </button>
-    </form>
-  );
-}
-```
-
----
-
-**File:** `app/ui/repos/table-skeleton.tsx` — CREATE:
-
-```typescript
-export default function RepoTableSkeleton() {
-  return (
-    <div className="mt-6 animate-pulse space-y-3">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="flex gap-4 rounded-md bg-gray-100 p-4">
-          <div className="h-4 w-48 rounded bg-gray-300" />
-          <div className="h-4 w-20 rounded bg-gray-300" />
-          <div className="h-4 w-12 rounded bg-gray-300" />
-        </div>
-      ))}
-    </div>
-  );
-}
-```
-
----
-
-**File:** `app/ui/repos/repo-header.tsx` — CREATE:
-
-```typescript
-'use client';
-
-import { useState } from 'react';
-import { Repository } from '@/app/lib/definitions';
-import { triggerRepoIngestion, generateRepoSummary, checkAndUpdateRepo } from '@/app/lib/actions';
-import { ArrowPathIcon, SparklesIcon } from '@heroicons/react/24/outline';
-
-export default function RepoHeader({ repo }: { repo: Repository }) {
-  const [summary, setSummary] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function handleSummarise() {
-    setLoading(true);
-    try {
-      await triggerRepoIngestion(repo.id);
-      const result = await generateRepoSummary(repo.id);
-      setSummary(result);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleCheckUpdates() {
-    setLoading(true);
-    try {
-      await checkAndUpdateRepo(repo.id);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-xl font-bold">
-            <a href={repo.github_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-              {repo.owner}/{repo.name}
-            </a>
-          </h2>
-          {repo.description && <p className="mt-1 text-sm text-gray-600">{repo.description}</p>}
-          <div className="mt-2 flex gap-4 text-sm text-gray-500">
-            <span>⭐ {repo.stars}</span>
-            <span>🍴 {repo.forks}</span>
-            {repo.language && <span>💻 {repo.language}</span>}
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleCheckUpdates}
-            disabled={loading}
-            className="flex items-center gap-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
-          >
-            <ArrowPathIcon className="h-4 w-4" />
-            Check Updates
-          </button>
-          <button
-            onClick={handleSummarise}
-            disabled={loading}
-            className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500 disabled:opacity-50"
-          >
-            <SparklesIcon className="h-4 w-4" />
-            {loading ? 'Analysing…' : 'Generate Summary'}
-          </button>
-        </div>
-      </div>
-      {summary && (
-        <div className="mt-4 rounded-md bg-blue-50 p-4 text-sm text-gray-700">
-          <p className="font-semibold text-blue-700 mb-1">Repository Summary</p>
-          <p className="whitespace-pre-wrap">{summary}</p>
-        </div>
+      {/* Chat Section - Only show when repo and chat are loaded */}
+      {activeRepoId && activeChatId && (
+        <ChatSection
+          repoId={activeRepoId}
+          chatId={activeChatId}
+          userId={userId}
+        />
       )}
     </div>
   );
 }
 ```
 
----
-
-**File:** `app/ui/repos/contributor-panel.tsx` — CREATE:
+**File:** `app/ui/dashboard/feature-buttons.tsx` — CREATE:
 
 ```typescript
 'use client';
 
 import { useState } from 'react';
-import { Contributor } from '@/app/lib/definitions';
-import {
-  generateContributorSummary,
-  generateQuestions,
-} from '@/app/lib/actions';
-import { SparklesIcon, QuestionMarkCircleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { Button } from '@/app/ui/button';
+import { generateRepoSummary, generateContributorQuestions, triggerRepoIngestion } from '@/app/lib/actions';
 
-const QUESTION_TYPES = ['general', 'scalability', 'optimization', 'ml-usage', 'architecture'];
-
-export default function ContributorPanel({
+export default function FeatureButtons({
   repoId,
-  contributors,
   userId,
 }: {
   repoId: string;
-  contributors: Contributor[];
   userId: string;
 }) {
-  const [selected, setSelected] = useState<Contributor | null>(contributors[0] ?? null);
-  const [summary, setSummary] = useState<string | null>(null);
-  const [questions, setQuestions] = useState<string[]>([]);
-  const [qType, setQType] = useState('general');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
 
   async function handleSummary() {
-    if (!selected) return;
-    setLoading(true);
+    setLoading('summary');
     try {
-      const result = await generateContributorSummary(repoId, selected.github_login);
-      setSummary(result);
+      const summary = await generateRepoSummary(repoId);
+      setResult(summary);
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   }
 
-  async function handleQuestions() {
-    if (!selected) return;
-    setLoading(true);
+  async function handleIngestion() {
+    setLoading('ingest');
     try {
-      const result = await generateQuestions(repoId, selected.id, selected.github_login, qType);
-      setQuestions(result);
+      await triggerRepoIngestion(repoId);
+      setResult('Repository ingested successfully!');
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      <h3 className="mb-4 font-semibold">Contributors</h3>
-      <div className="flex gap-4">
-        {/* Contributor list */}
-        <ul className="w-40 space-y-1 border-r pr-4">
-          {contributors.map((c) => (
-            <li key={c.id}>
-              <button
-                onClick={() => { setSelected(c); setSummary(null); setQuestions([]); }}
-                className={`w-full rounded-md px-2 py-1 text-left text-sm hover:bg-gray-100 ${selected?.id === c.id ? 'bg-blue-50 font-medium text-blue-700' : ''}`}
-              >
-                {c.github_login}
-                <span className="ml-1 text-xs text-gray-400">({c.total_commits})</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-
-        {/* Contributor detail */}
-        {selected && (
-          <div className="flex-1 space-y-4">
-            <div className="flex items-center gap-3" aria-label={`Contributor: ${selected.github_login}, ${selected.total_commits} commits`}>
-              {selected.avatar_url && (
-                <img src={selected.avatar_url} alt={`${selected.github_login}'s avatar`} className="h-10 w-10 rounded-full" />
-              )}
-              <div>
-                <p className="font-medium" aria-label="GitHub username">{selected.github_login}</p>
-                <p className="text-sm text-gray-500"><span className="sr-only">Total commits: </span>{selected.total_commits} commits</p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={handleSummary}
-                disabled={loading}
-                className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500 disabled:opacity-50"
-              >
-                <SparklesIcon className="h-4 w-4" />
-                Contributor Summary
-              </button>
-
-              <select
-                value={qType}
-                onChange={(e) => setQType(e.target.value)}
-                className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-              >
-                {QUESTION_TYPES.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-
-              <button
-                onClick={handleQuestions}
-                disabled={loading}
-                className="flex items-center gap-1 rounded-md border border-blue-300 px-3 py-1.5 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-              >
-                <QuestionMarkCircleIcon className="h-4 w-4" />
-                {loading ? 'Generating…' : 'Generate Questions'}
-              </button>
-
-              {questions.length > 0 && (
-                <button
-                  onClick={handleQuestions}
-                  disabled={loading}
-                  className="flex items-center gap-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
-                >
-                  <ArrowPathIcon className="h-4 w-4" />
-                  Regenerate
-                </button>
-              )}
-            </div>
-
-            {summary && (
-              <div className="rounded-md bg-green-50 p-4 text-sm text-gray-700">
-                <p className="font-semibold text-green-700 mb-1">Summary for {selected.github_login}</p>
-                <p className="whitespace-pre-wrap">{summary}</p>
-              </div>
-            )}
-
-            {questions.length > 0 && (
-              <div className="rounded-md bg-yellow-50 p-4 text-sm text-gray-700">
-                <p className="font-semibold text-yellow-700 mb-2">Evaluation Questions ({qType})</p>
-                <ol className="list-decimal list-inside space-y-1">
-                  {questions.map((q, i) => <li key={i}>{q}</li>)}
-                </ol>
-                <button
-                  onClick={() => navigator.clipboard.writeText(questions.join('\n'))}
-                  className="mt-3 rounded-md border border-yellow-300 px-3 py-1 text-xs hover:bg-yellow-100"
-                >
-                  Copy Questions
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+    <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <h2 className="mb-4 text-lg font-semibold">Repository Actions</h2>
+      <div className="flex flex-wrap gap-3">
+        <Button
+          onClick={handleSummary}
+          disabled={loading === 'summary'}
+        >
+          {loading === 'summary' ? 'Generating...' : 'Generate Summary'}
+        </Button>
+        <Button
+          onClick={handleIngestion}
+          disabled={loading === 'ingest'}
+        >
+          {loading === 'ingest' ? 'Ingesting...' : 'Ingest Repository'}
+        </Button>
       </div>
+      {result && (
+        <div className="mt-4 rounded-md bg-gray-50 p-4">
+          <p className="whitespace-pre-wrap text-sm">{result}</p>
+        </div>
+      )}
     </div>
   );
 }
 ```
 
----
-
-**File:** `app/ui/repos/chat-section.tsx` — CREATE:
+**File:** `app/ui/dashboard/chat-section.tsx` — CREATE:
 
 ```typescript
 'use client';
 
 import { useState } from 'react';
-import { Chat, Message } from '@/app/lib/definitions';
-import { createChat, sendChatMessage } from '@/app/lib/actions';
+import { sendChatMessage } from '@/app/lib/actions';
+import { Button } from '@/app/ui/button';
 import { PaperAirplaneIcon } from '@heroicons/react/24/outline';
 
 export default function ChatSection({
   repoId,
+  chatId,
   userId,
-  chats,
 }: {
   repoId: string;
+  chatId: string;
   userId: string;
-  chats: Chat[];
 }) {
-  const [activeChatId, setActiveChatId] = useState<string | null>(
-    chats[0]?.id ?? null
-  );
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
 
-  async function handleNewChat() {
-    const chatId = await createChat(userId, repoId, 'New Chat');
-    setActiveChatId(chatId);
-    setMessages([]);
-  }
-
   async function handleSend() {
-    if (!input.trim() || !activeChatId) return;
+    if (!input.trim()) return;
+
     const question = input.trim();
     setInput('');
     setSending(true);
 
-    // Optimistic user message
-    setMessages((prev) => [
-      ...prev,
-      { id: 'tmp', chat_id: activeChatId, role: 'user', content: question, created_at: new Date().toISOString() },
-    ]);
+    // Add user message optimistically
+    setMessages((prev) => [...prev, { role: 'user', content: question }]);
 
     try {
-      const answer = await sendChatMessage(activeChatId, repoId, question);
-      setMessages((prev) => [
-        ...prev,
-        { id: 'tmp2', chat_id: activeChatId, role: 'assistant', content: answer, created_at: new Date().toISOString() },
-      ]);
+      const answer = await sendChatMessage(chatId, repoId, question);
+      setMessages((prev) => [...prev, { role: 'assistant', content: answer }]);
     } finally {
       setSending(false);
     }
   }
 
   return (
-    <div className="flex flex-col rounded-xl border border-gray-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <h3 className="font-semibold">Chat with Repository</h3>
-        <button
-          onClick={handleNewChat}
-          className="rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50"
-        >
-          + New Chat
-        </button>
+    <div className="flex flex-col rounded-lg border border-gray-200 bg-white shadow-sm">
+      <div className="border-b border-gray-200 p-4">
+        <h2 className="text-lg font-semibold">Chat with Repository</h2>
+        <p className="text-sm text-gray-500">Ask questions about this repository</p>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 space-y-3 overflow-y-auto p-4" style={{ minHeight: 200, maxHeight: 400 }}>
+      <div className="flex-1 space-y-4 overflow-y-auto p-4" style={{ minHeight: '300px', maxHeight: '500px' }}>
         {messages.length === 0 && (
-          <p className="text-center text-sm text-gray-400">
-            Ask anything about this repository…
-          </p>
+          <p className="text-center text-sm text-gray-400">No messages yet. Start a conversation!</p>
         )}
-        {messages.map((msg, i) => (
+        {messages.map((msg, idx) => (
           <div
-            key={i}
+            key={idx}
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-prose rounded-2xl px-4 py-2 text-sm ${
+              className={`max-w-[80%] rounded-lg px-4 py-2 ${
                 msg.role === 'user'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-800'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-100 text-gray-900'
               }`}
             >
-              {msg.content}
+              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
             </div>
           </div>
         ))}
-        {sending && (
-          <div className="flex justify-start">
-            <div className="rounded-2xl bg-gray-100 px-4 py-2 text-sm text-gray-400">
-              Thinking…
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Input */}
-      <div className="border-t px-4 py-3">
+      <div className="border-t border-gray-200 p-4">
         <div className="flex gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-            placeholder="Ask a question about this repo…"
-            disabled={!activeChatId || sending}
-            className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+            onKeyDown={(e) => e.key === 'Enter' && !sending && handleSend()}
+            placeholder="Ask a question..."
+            disabled={sending}
+            className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <button
-            onClick={handleSend}
-            disabled={!activeChatId || sending || !input.trim()}
-            className="rounded-md bg-blue-600 px-3 py-2 text-white hover:bg-blue-500 disabled:opacity-50"
-          >
-            <PaperAirplaneIcon className="h-4 w-4" />
-          </button>
+          <Button onClick={handleSend} disabled={sending || !input.trim()}>
+            <PaperAirplaneIcon className="h-5 w-5" />
+          </Button>
         </div>
       </div>
     </div>
@@ -1828,67 +1432,8 @@ export default function ChatSection({
 }
 ```
 
----
+Note: These components provide a single-page dashboard experience where users enter a repo URL, trigger actions, and chat - all in one place. No separate repo list or detail pages needed.
 
-**File:** `app/ui/repos/chat-sidebar.tsx` — CREATE:
-
-```typescript
-'use client';
-
-import { useState } from 'react';
-import { Chat } from '@/app/lib/definitions';
-import { ChatBubbleLeftIcon } from '@heroicons/react/24/outline';
-import clsx from 'clsx';
-
-export default function ChatSidebar({
-  chats,
-  repoId,
-  userId,
-}: {
-  chats: Chat[];
-  repoId: string;
-  userId: string;
-}) {
-  const [activeId, setActiveId] = useState<string | null>(chats[0]?.id ?? null);
-
-  return (
-    <div className="flex h-full flex-col rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-        Chat History
-      </p>
-      {chats.length === 0 && (
-        <p className="text-xs text-gray-400">No chats yet.</p>
-      )}
-      <ul className="space-y-1 overflow-y-auto">
-        {chats.map((chat) => (
-          <li key={chat.id}>
-            <button
-              onClick={() => setActiveId(chat.id)}
-              className={clsx(
-                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-gray-100',
-                { 'bg-blue-50 text-blue-700 font-medium': activeId === chat.id }
-              )}
-            >
-              <ChatBubbleLeftIcon className="h-4 w-4 flex-shrink-0" />
-              <span className="truncate">{chat.title}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-```
-
-### Step 4.8 — Move pagination component
-
-```bash
-cp app/ui/invoices/pagination.tsx app/ui/pagination.tsx
-```
-
-> Update the import in `app/dashboard/repos/page.tsx` to `@/app/ui/pagination`.  No code changes needed — the component is generic.
-
----
 
 ## Phase 5 — Python RAG Service
 Docs: FastAPI (https://fastapi.tiangolo.com/tutorial/), LangChain FAISS (https://python.langchain.com/docs/integrations/vectorstores/faiss)
@@ -2499,15 +2044,17 @@ uvicorn main:app --reload --port 8000
 ## Phase 6 — Chat System
 Docs: TanStack Query hooks (`useQuery`, `useMutation`) — https://tanstack.com/query/latest/docs/framework/react/reference/useQuery
 
-The chat system is built across multiple layers already described above.  This phase adds TanStack Query for the dynamic parts.
+The chat system is already built into the dashboard components in Phase 4 (Step 4.5). Each repository gets exactly one chat per user (enforced by the database schema's unique constraint on `userId_repositoryId`).
 
-### Step 6.1 — Install TanStack Query
+This phase is optional and only adds TanStack Query for advanced client-side state management. The basic implementation in Phase 4 already works with server actions alone.
+
+### Step 6.1 — (Optional) Install TanStack Query
 
 ```bash
 pnpm add @tanstack/react-query @tanstack/react-query-devtools
 ```
 
-### Step 6.2 — Add QueryClient provider
+### Step 6.2 — (Optional) Add QueryClient provider
 
 **File:** `app/providers.tsx` — CREATE:
 
@@ -2545,7 +2092,7 @@ import { Providers } from './providers';
 </body>
 ```
 
-### Step 6.3 — TanStack Query hooks
+### Step 6.3 — (Optional) TanStack Query hooks
 
 **File:** `app/hooks/use-chat.ts` — CREATE:
 
@@ -2566,25 +2113,9 @@ export function useSendMessage(chatId: string, repoId: string) {
     },
   });
 }
-
-/** Mutation hook for regenerating questions */
-export function useRegenerateQuestions(
-  repoId: string,
-  contributorId: string,
-  contributorLogin: string
-) {
-  return useMutation({
-    mutationFn: async (questionType: string) => {
-      const { generateQuestions } = await import('@/app/lib/actions');
-      return generateQuestions(repoId, contributorId, contributorLogin, questionType);
-    },
-  });
-}
 ```
 
-> **Where to use TanStack Query hooks:**
-> - `useSendMessage` → replace direct server action call in `ChatSection` to get loading/error states automatically.
-> - `useRegenerateQuestions` → replace the questions button in `ContributorPanel`.
+> **Note:** The basic chat implementation in Phase 4 doesn't require TanStack Query. Only add it if you need advanced features like optimistic updates, automatic retries, or complex caching logic.
 
 ---
 
@@ -2683,28 +2214,36 @@ const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/commits/HEAD`, {
 
 | Existing (Invoice Dashboard) | New (GitHub Evaluator) | File |
 |---|---|---|
-| `/dashboard/invoices` | `/dashboard/repos` | `app/dashboard/repos/page.tsx` |
-| `/dashboard/invoices/[id]/edit` | `/dashboard/repos/[id]` (detail) | `app/dashboard/repos/[id]/page.tsx` |
-| `/dashboard/customers` | (merged into repo detail) | removed |
-| `fetchFilteredInvoices()` | `fetchFilteredRepositories()` | `app/lib/data.ts` |
-| `fetchInvoicesPages()` | `fetchRepositoryPages()` | `app/lib/data.ts` |
+| `/dashboard/invoices` | `/dashboard` (direct repo input) | `app/dashboard/(home)/page.tsx` |
+| `/dashboard/invoices/[id]/edit` | (merged into dashboard) | removed |
+| `/dashboard/customers` | (merged into dashboard) | removed |
+| `fetchFilteredInvoices()` | (removed - no search) | removed |
+| `fetchInvoicesPages()` | (removed - no pagination) | removed |
 | `fetchCustomers()` | `fetchContributorsByRepo()` | `app/lib/data.ts` |
 | `createInvoice()` server action | `addRepository()` server action | `app/lib/actions.ts` |
 | `deleteInvoice()` server action | `deleteRepository()` server action | `app/lib/actions.ts` |
-| `<InvoicesTable />` | `<RepoTable />` | `app/ui/repos/table.tsx` |
-| `<Search />` | `<Search />` (reused as-is) | `app/ui/search.tsx` |
-| `<Pagination />` | `<Pagination />` (reused as-is) | `app/ui/pagination.tsx` |
-| `<SideNav />` | `<SideNav />` (reused, new links) | `app/ui/dashboard/sidenav.tsx` |
-| `InvoiceForm` type | `Repository`, `Contributor` types | `app/lib/definitions.ts` |
+| `<InvoicesTable />` | (removed - no repo list) | removed |
+| `<Search />` | (removed - no search) | removed |
+| `<Pagination />` | (removed - no pagination) | removed |
+| `<SideNav />` | `<SideNav />` (simplified nav) | `app/ui/dashboard/sidenav.tsx` |
+| `InvoiceForm` type | `Repository`, `Contributor`, `Chat` types | `app/lib/definitions.ts` |
 | `customers` table | `contributors` table | Prisma migration |
 | `invoices` table | `repositories` table | Prisma migration |
-| Revenue chart streaming | Summary streaming via Suspense | `app/dashboard/repos/[id]/page.tsx` |
-| `loading.tsx` skeleton | `RepoTableSkeleton` | `app/ui/repos/table-skeleton.tsx` |
-| `error.tsx` | `error.tsx` per route | `app/dashboard/repos/[id]/error.tsx` |
+| (none) | `chats` table (one per repo/user) | Prisma migration |
+| Revenue chart streaming | RAG summary generation | `app/ui/dashboard/feature-buttons.tsx` |
+| `loading.tsx` skeleton | Suspense in dashboard | `app/dashboard/(home)/page.tsx` |
+| `error.tsx` | `error.tsx` per route | same pattern |
 | `notFound()` | `notFound()` (same pattern) | same pattern |
 | `authenticate()` | `authenticate()` (unchanged) | `app/lib/actions.ts` |
-| `revalidatePath` | `revalidatePath` + `revalidateTag` | same pattern |
-| `generatePagination()` util | `generatePagination()` (reused) | `app/lib/utils.ts` |
+| `revalidatePath` | `revalidatePath('/dashboard')` | `app/lib/actions.ts` |
+| `generatePagination()` util | (removed - no pagination) | removed |
+
+**Key Changes:**
+- **No separate repo list page** — everything on `/dashboard`
+- **No search or pagination** — direct URL input only
+- **One chat per repo per user** — enforced by `@@unique([userId, repositoryId])` in Chat model
+- **Feature buttons on dashboard** — summary, questions, ingest actions
+- **Simplified navigation** — only "Dashboard" link
 
 ---
 
