@@ -531,6 +531,23 @@ Docs: Prisma schema (https://www.prisma.io/docs/orm/prisma-schema), Prisma Clien
 
 > **Key shift:** Every `import postgres from 'postgres'` and `const sql = postgres(...)` is removed.  All DB access goes through the **Prisma Client** singleton.
 
+### Step 3.0 — Get a Postgres `DATABASE_URL`
+- **Local (Docker)**
+  ```bash
+  docker run --name code-eval-postgres \
+    -e POSTGRES_PASSWORD=postgres \
+    -e POSTGRES_USER=postgres \
+    -e POSTGRES_DB=code_eval_hub \
+    -p 5432:5432 -d postgres:16
+  # .env (local)
+  DATABASE_URL="postgresql://postgres:postgres@localhost:5432/code_eval_hub"
+  ```
+- **Managed (Neon/Supabase/Render/Railway/Vercel Postgres)**
+  1) Create a project/database in the provider dashboard.
+  2) Copy the provided connection string (often includes `?sslmode=require`).
+  3) Paste it into `.env` for local dev (you can keep a separate dev DB) and Vercel envs as `DATABASE_URL`.
+- Keep `NEXTAUTH_SECRET` set alongside `DATABASE_URL` in every environment.
+
 ### Step 3.1 — Install Prisma and initialise (if not done in Section 5)
 
 ```bash
@@ -2761,18 +2778,6 @@ Phase 8: Deploy            → run DB migration, deploy Next.js, deploy RAG serv
 ---
 
 ## Deployment (Minimal, Step-by-Step)
-
-### Get a Postgres `DATABASE_URL`
-- **Local (Docker):**
-  ```bash
-  docker run --name code-eval-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=code_eval_hub -p 5432:5432 -d postgres:16
-  # .env
-  DATABASE_URL="postgresql://postgres:postgres@localhost:5432/code_eval_hub"
-  ```
-- **Managed (Neon/Supabase/Render/Railway/Vercel Postgres):**
-  1) Create a project/database in the provider dashboard.
-  2) Copy the provided connection string; ensure it includes SSL (often `?sslmode=require`).
-  3) Set it as `DATABASE_URL` in Vercel + local `.env` (use a separate dev DB if possible).
 
 ### When to integrate DB
 - **After Phase 3**: Run `npx prisma migrate dev --name init` locally against your dev database. Verify auth and repo CRUD locally.
