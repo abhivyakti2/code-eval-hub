@@ -153,8 +153,8 @@ Repo ingestion
  └── For each contributor:
        └── Collect their commit messages + diffs summary
              └── Embed → FAISS index (contributor-level)
-             └── Store in: rag_data/{repo_id}/contributors/{login}.faiss
- └── Store repo-level index at: rag_data/{repo_id}/repo.faiss
+             └── Upload to storage: {prefix}/{repo_id}/contributors/{login}.faiss
+ └── Upload repo-level index to storage: {prefix}/{repo_id}/repo.faiss
 ```
 
 ### Avoid recomputing embeddings
@@ -165,7 +165,10 @@ Repo ingestion
 
 ### Embedding Storage
 
-Store on **disk** (FAISS `.faiss` + `.pkl` files) inside a `rag_data/` directory relative to the Python service.  Record metadata (repo_id, contributor_login, last_sha) in PostgreSQL so Next.js can query freshness.
+Persist FAISS files only temporarily, then upload them to object storage (S3/GCS/Azure Blob/MinIO).  Store metadata in PostgreSQL for retrieval freshness:
+- `repositories`: `lastCommitSha`, `lastIngestedAt`, `repoFaissUri` (storage key/URL)
+- `contributors`: `lastIngestedAt`, `faissUri`, `totalCommits`
+During ingestion: repo → generate embeddings → write FAISS to `/tmp` → upload → delete temp → upsert metadata in Postgres.  Never rely on long-lived local disk.
 
 ### Detect Updates
 
@@ -240,6 +243,8 @@ model Repository {
   language       String?
   lastCommitSha  String?
   lastIngestedAt DateTime?
+  repoFaissUri   String?
+  repoFaissUploadedAt DateTime?
   createdAt      DateTime      @default(now())
   user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   contributors   Contributor[]
@@ -257,6 +262,8 @@ model Contributor {
   avatarUrl    String?
   totalCommits Int                 @default(0)
   summary      String?
+  faissUri     String?
+  faissUploadedAt DateTime?
   createdAt    DateTime            @default(now())
   repository   Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
   questions    GeneratedQuestion[]
@@ -1910,7 +1917,9 @@ load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-RAG_DATA_DIR = os.getenv("RAG_DATA_DIR", "./rag_data")
+VECTOR_STORE_BUCKET = os.getenv("VECTOR_STORE_BUCKET")  # e.g., s3 bucket / gcs bucket / minio bucket
+VECTOR_STORE_PREFIX = os.getenv("VECTOR_STORE_PREFIX", "vector-stores")
+VECTOR_STORE_TMP = os.getenv("VECTOR_STORE_TMP", "/tmp/vector-stores")
 ```
 
 ### Step 5.4 — github_loader.py (replaces transcript_loader.py)
@@ -2021,36 +2030,38 @@ def get_latest_sha(owner: str, repo: str) -> str:
     return r.json()["sha"]
 ```
 
-### Step 5.5 — vector_store.py (adapted — minimal changes)
+### Step 5.5 — vector_store.py (adapted for object storage uploads)
 
 **File:** `rag-service/vector_store.py` — CREATE:
 
 ```python
 """
-Adapted from the YouTube RAG vector_store.py.
-Key change: accepts any text string (repo content or contributor text)
-and optionally persists / loads the FAISS index to avoid recomputation.
+Adapted from the YouTube RAG vector_store.py — but stores FAISS in object
+storage (no long-lived local disk). Accepts repo or contributor text.
 """
 
 import os
-import pickle
+import tempfile
+from pathlib import Path
+from typing import Optional
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-from config import RAG_DATA_DIR
+from config import VECTOR_STORE_BUCKET, VECTOR_STORE_PREFIX, VECTOR_STORE_TMP
+from storage import upload_dir, download_dir, object_exists  # implement with boto3/gcsfs/azure-sdk
 
 
 EMBEDDINGS = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
 
-def _index_path(repo_id: str, scope: str) -> str:
-    """Return the FAISS index file path for a given repo + scope."""
-    return os.path.join(RAG_DATA_DIR, repo_id, f"{scope}.faiss")
+def _object_key(repo_id: str, scope: str) -> str:
+    """Return the object-storage key for a given repo + scope."""
+    return f"{VECTOR_STORE_PREFIX}/{repo_id}/{scope}.faiss"
 
 
 def create_vector_store(text: str, repo_id: str, scope: str = "repo") -> FAISS:
     """
-    Create and persist a FAISS vector store from text.
+    Create a FAISS vector store from text, then upload it to object storage.
     `scope` is either 'repo' or a contributor login like 'octocat'.
     """
     splitter = RecursiveCharacterTextSplitter(
@@ -2061,26 +2072,36 @@ def create_vector_store(text: str, repo_id: str, scope: str = "repo") -> FAISS:
 
     vector_store = FAISS.from_documents(chunks, EMBEDDINGS)
 
-    # Persist to disk
-    path = _index_path(repo_id, scope)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    vector_store.save_local(path)
+    object_key = _object_key(repo_id, scope)
+    with tempfile.TemporaryDirectory(dir=VECTOR_STORE_TMP) as tmp:
+        path = Path(tmp) / "index"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        vector_store.save_local(str(path))
+        upload_dir(str(path), bucket=VECTOR_STORE_BUCKET, key=object_key)
 
     return vector_store
 
 
-def load_vector_store(repo_id: str, scope: str = "repo") -> FAISS | None:
-    """Load a persisted FAISS index, or return None if it doesn't exist."""
-    path = _index_path(repo_id, scope)
-    if not os.path.exists(path):
+def load_vector_store(repo_id: str, scope: str = "repo") -> Optional[FAISS]:
+    """Load a FAISS index from object storage, or return None if missing."""
+    object_key = _object_key(repo_id, scope)
+    if not object_exists(bucket=VECTOR_STORE_BUCKET, key=object_key):
         return None
-    return FAISS.load_local(path, EMBEDDINGS, allow_dangerous_deserialization=True)
+
+    with tempfile.TemporaryDirectory(dir=VECTOR_STORE_TMP) as tmp:
+        path = Path(tmp) / "index"
+        download_dir(bucket=VECTOR_STORE_BUCKET, key=object_key, target=str(path))
+        return FAISS.load_local(
+            str(path),
+            EMBEDDINGS,
+            allow_dangerous_deserialization=True,
+        )
 
 
 def get_or_create_vector_store(
     text: str, repo_id: str, scope: str = "repo"
 ) -> FAISS:
-    """Load from disk if available, otherwise create and save."""
+    """Load from storage if available, otherwise create and upload."""
     vs = load_vector_store(repo_id, scope)
     if vs is not None:
         return vs
@@ -2315,23 +2336,33 @@ class ChatRequest(BaseModel):
 
 def _get_owner_repo(repo_id: str) -> tuple[str, str]:
     """
-    In a real implementation, look this up from a shared DB or cache.
-    Here we embed owner/repo in the index directory metadata file.
+    Look up owner/repo from PostgreSQL (repositories table). Pseudocode shown;
+    replace with your DB client of choice.
     """
-    import os, json
-    meta_path = f"./rag_data/{repo_id}/meta.json"
-    if not os.path.exists(meta_path):
+    row = db.fetch_one(
+        "SELECT owner, name FROM \"Repository\" WHERE id = %s",
+        (repo_id,),
+    )
+    if not row:
         raise HTTPException(status_code=404, detail="Repo not ingested yet.")
-    with open(meta_path) as f:
-        meta = json.load(f)
-    return meta["owner"], meta["repo_name"]
+    return row["owner"], row["name"]
 
 
-def _save_meta(repo_id: str, owner: str, repo_name: str):
-    import os, json
-    os.makedirs(f"./rag_data/{repo_id}", exist_ok=True)
-    with open(f"./rag_data/{repo_id}/meta.json", "w") as f:
-        json.dump({"owner": owner, "repo_name": repo_name}, f)
+def _update_repo_metadata(repo_id: str, latest_sha: str, faiss_uri: str):
+    """
+    Persist storage location + sha to PostgreSQL (repositories table).
+    """
+    db.execute(
+        """
+        UPDATE "Repository"
+        SET "lastCommitSha" = %s,
+            "lastIngestedAt" = NOW(),
+            "repoFaissUri" = %s,
+            "repoFaissUploadedAt" = NOW()
+        WHERE id = %s
+        """,
+        (latest_sha, faiss_uri, repo_id),
+    )
 
 
 # ── Endpoints ──────────────────────────────────────────────────
@@ -2344,9 +2375,10 @@ def ingest_repo(data: IngestRequest):
     """
     latest_sha = get_latest_sha(data.owner, data.repo_name)
     repo_text = build_repo_text(data.owner, data.repo_name)
-    create_vector_store(repo_text, data.repo_id, scope="repo")
-    _save_meta(data.repo_id, data.owner, data.repo_name)
-    return {"status": "ok", "latest_sha": latest_sha}
+    vs = create_vector_store(repo_text, data.repo_id, scope="repo")
+    repo_faiss_uri = f"{VECTOR_STORE_PREFIX}/{data.repo_id}/repo.faiss"
+    _update_repo_metadata(data.repo_id, latest_sha, repo_faiss_uri)
+    return {"status": "ok", "latest_sha": latest_sha, "repo_faiss_uri": repo_faiss_uri}
 
 
 @app.post("/summarize")
@@ -2424,7 +2456,9 @@ def chat_with_repo(data: ChatRequest):
 ```bash
 GROQ_API_KEY=your_groq_api_key_here
 GITHUB_TOKEN=your_github_pat_here
-RAG_DATA_DIR=./rag_data
+VECTOR_STORE_BUCKET=your_bucket_name
+VECTOR_STORE_PREFIX=vector-stores
+VECTOR_STORE_TMP=/tmp/vector-stores
 ```
 
 ### Step 5.9 — Start the RAG service
@@ -2568,43 +2602,31 @@ export const fetchRepositoriesByUser = unstable_cache(
 
 ### Step 7.2 — Incremental embedding updates
 
-Already handled in `rag-service/main.py` via the `/ingest` endpoint — it always fetches the latest SHA and rebuilds only if needed (via `get_or_create_vector_store`).
-
-For **file-level incremental updates**, extend `/ingest`:
+Use the repo metadata stored in PostgreSQL to avoid re-embedding:
 
 ```python
-# In rag-service/main.py — replace the ingest body with:
-
 @app.post("/ingest")
 def ingest_repo(data: IngestRequest):
-    import os, json
-
     latest_sha = get_latest_sha(data.owner, data.repo_name)
 
-    # Skip if already up to date
-    meta_path = f"./rag_data/{data.repo_id}/meta.json"
-    if os.path.exists(meta_path):
-        with open(meta_path) as f:
-            meta = json.load(f)
-        if meta.get("last_sha") == latest_sha:
-            return {"status": "up_to_date", "latest_sha": latest_sha}
+    # Skip if repo already ingested at the same SHA
+    record = db.fetch_one(
+        'SELECT "lastCommitSha", "repoFaissUri" FROM "Repository" WHERE id = %s',
+        (data.repo_id,),
+    )
+    if record and record["lastCommitSha"] == latest_sha and record["repoFaissUri"]:
+        return {
+            "status": "up_to_date",
+            "latest_sha": latest_sha,
+            "repo_faiss_uri": record["repoFaissUri"],
+        }
 
-    # Re-ingest
     repo_text = build_repo_text(data.owner, data.repo_name)
     create_vector_store(repo_text, data.repo_id, scope="repo")
+    repo_faiss_uri = f"{VECTOR_STORE_PREFIX}/{data.repo_id}/repo.faiss"
+    _update_repo_metadata(data.repo_id, latest_sha, repo_faiss_uri)
 
-    _save_meta(data.repo_id, data.owner, data.repo_name, latest_sha)
-    return {"status": "ok", "latest_sha": latest_sha}
-```
-
-Update `_save_meta` to accept the SHA:
-
-```python
-def _save_meta(repo_id: str, owner: str, repo_name: str, last_sha: str = ""):
-    import os, json
-    os.makedirs(f"./rag_data/{repo_id}", exist_ok=True)
-    with open(f"./rag_data/{repo_id}/meta.json", "w") as f:
-        json.dump({"owner": owner, "repo_name": repo_name, "last_sha": last_sha}, f)
+    return {"status": "ok", "latest_sha": latest_sha, "repo_faiss_uri": repo_faiss_uri}
 ```
 
 ### Step 7.3 — HTTP caching for GitHub API calls
