@@ -62,7 +62,7 @@ app/
 | Pattern | Where used | How to reuse |
 |---|---|---|
 | Server Actions (`'use server'`) | `app/lib/actions.ts` | Replace invoice CRUD with GitHub fetch + RAG trigger actions |
-| Postgres direct SQL | `app/lib/data.ts` | Keep same pattern for new schema tables |
+| Prisma ORM (replaces direct SQL) | `app/lib/data.ts` | Keep query shapes but implement with `prisma.*` (drop the `postgres` package entirely) |
 | Zod validation | `actions.ts` form validation | Validate GitHub URL input |
 | URL-based search params | `invoices/page.tsx` | Drive repo search and pagination via URL params |
 | Debounced `<Search />` | `app/ui/search.tsx` | Reuse as-is for repo search input |
