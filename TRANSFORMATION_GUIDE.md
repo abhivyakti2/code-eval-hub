@@ -2762,6 +2762,18 @@ Phase 8: Deploy            → run DB migration, deploy Next.js, deploy RAG serv
 
 ## Deployment (Minimal, Step-by-Step)
 
+### Get a Postgres `DATABASE_URL`
+- **Local (Docker):**
+  ```bash
+  docker run --name code-eval-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=code_eval_hub -p 5432:5432 -d postgres:16
+  # .env
+  DATABASE_URL="postgresql://postgres:postgres@localhost:5432/code_eval_hub"
+  ```
+- **Managed (Neon/Supabase/Render/Railway/Vercel Postgres):**
+  1) Create a project/database in the provider dashboard.
+  2) Copy the provided connection string; ensure it includes SSL (often `?sslmode=require`).
+  3) Set it as `DATABASE_URL` in Vercel + local `.env` (use a separate dev DB if possible).
+
 ### When to integrate DB
 - **After Phase 3**: Run `npx prisma migrate dev --name init` locally against your dev database. Verify auth and repo CRUD locally.
 - **Before deploy**: Run `npx prisma migrate deploy` against the production database (from CI or a one-time script) so the schema exists before the app boots.
