@@ -398,6 +398,7 @@ mkdir -p app/lib
 ---
 
 ## Phase 2 — GitHub API Integration
+Docs: GitHub REST API — repos, contributors, commits, trees, contents, headers (https://docs.github.com/en/rest)
 
 ### Step 2.1 — Add GitHub token to environment
 
@@ -510,6 +511,7 @@ export async function fetchLatestCommitSha(owner: string, repo: string): Promise
   return data.sha as string;
 }
 ```
+Docs: Repos `GET /repos/{owner}/{repo}`, Contributors `GET /repos/{owner}/{repo}/contributors`, Commits `GET /repos/{owner}/{repo}/commits`, Trees `GET /repos/{owner}/{repo}/git/trees/{sha}`, Contents `GET /repos/{owner}/{repo}/contents/{path}`, Headers/versioning (media types) — all at https://docs.github.com/en/rest
 
 ### Step 2.3 — Add GitHub URL Zod schema
 
@@ -525,6 +527,7 @@ const GitHubUrlSchema = z.string().url().refine(
 ---
 
 ## Phase 3 — Database Changes
+Docs: Prisma schema (https://www.prisma.io/docs/orm/prisma-schema), Prisma Client API (https://www.prisma.io/docs/orm/reference/prisma-client-reference), Prisma Migrate (https://www.prisma.io/docs/orm/prisma-migrate/workflows)
 
 > **Key shift:** Every `import postgres from 'postgres'` and `const sql = postgres(...)` is removed.  All DB access goes through the **Prisma Client** singleton.
 
@@ -633,6 +636,7 @@ export const { auth, signIn, signOut } = NextAuth({
   ],
 });
 ```
+Docs: NextAuth Credentials provider — https://authjs.dev/guides/providers/credentials
 
 > **Diff from original:** Remove `import postgres from 'postgres'`, remove `const sql = postgres(...)`, replace `sql<User[]>\`SELECT * FROM users WHERE email=${email}\`` with `prisma.user.findUnique({ where: { email } })`.
 
@@ -1047,6 +1051,7 @@ export async function checkAndUpdateRepo(repoId: string) {
   }
 }
 ```
+Docs: Next.js Server Actions & cache invalidation (`revalidatePath`, `revalidateTag`) — https://nextjs.org/docs/app/building-your-application/data-fetching/server-actions-and-mutations
 
 ---
 
@@ -1869,6 +1874,7 @@ cp app/ui/invoices/pagination.tsx app/ui/pagination.tsx
 ---
 
 ## Phase 5 — Python RAG Service
+Docs: FastAPI (https://fastapi.tiangolo.com/tutorial/), LangChain FAISS (https://python.langchain.com/docs/integrations/vectorstores/faiss)
 
 Create a separate directory `rag-service/` at the **project root** (sibling to `app/`).
 
@@ -2474,6 +2480,7 @@ uvicorn main:app --reload --port 8000
 ---
 
 ## Phase 6 — Chat System
+Docs: TanStack Query hooks (`useQuery`, `useMutation`) — https://tanstack.com/query/latest/docs/framework/react/reference/useQuery
 
 The chat system is built across multiple layers already described above.  This phase adds TanStack Query for the dynamic parts.
 
@@ -2719,27 +2726,6 @@ const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/commits/HEAD`, {
 | Latest SHA | `GET /repos/{owner}/{repo}/commits/HEAD` | `fetchLatestCommitSha()` |
 
 > Rate limits: 60 req/hr unauthenticated → 5000 req/hr with GitHub PAT.  Always use a token.
-
----
-
-## Official Documentation Links
-
-| Topic | Where used | Official docs |
-|---|---|---|
-| GitHub REST — repos | `fetchRepoMetadata`, rate limits | https://docs.github.com/en/rest/repos/repos#get-a-repository |
-| GitHub REST — contributors | `fetchContributors` | https://docs.github.com/en/rest/repos/repos#list-repository-contributors |
-| GitHub REST — commits (author filter) | `fetchCommitsByContributor` | https://docs.github.com/en/rest/commits/commits#list-commits |
-| GitHub REST — git trees | `fetchFileTree` | https://docs.github.com/en/rest/git/trees#get-a-tree |
-| GitHub REST — contents | `fetchFileContent` | https://docs.github.com/en/rest/repos/contents#get-repository-content |
-| GitHub REST — headers/versioning | Shared headers in `app/lib/github.ts` | https://docs.github.com/en/rest/overview/media-types#github-rest-api-media-types |
-| Prisma — schema & relations | `prisma/schema.prisma` | https://www.prisma.io/docs/orm/prisma-schema |
-| Prisma — Client API | `app/lib/db.ts`, `data.ts`, `actions.ts`, `auth.ts` | https://www.prisma.io/docs/orm/reference/prisma-client-reference |
-| Prisma — migrations | `npx prisma migrate dev` flow | https://www.prisma.io/docs/orm/prisma-migrate/workflows |
-| TanStack Query — hooks | Chat/question hooks (`useQuery`, `useMutation`) | https://tanstack.com/query/latest/docs/framework/react/reference/useQuery |
-| NextAuth — Credentials | `auth.ts` login flow | https://authjs.dev/guides/providers/credentials |
-| Next.js — Server Actions & revalidateTag | `app/lib/actions.ts` cache busting | https://nextjs.org/docs/app/building-your-application/data-fetching/server-actions-and-mutations |
-| FastAPI | `rag-service/main.py` endpoints | https://fastapi.tiangolo.com/tutorial/ |
-| LangChain + FAISS | `rag-service/vector_store.py` | https://python.langchain.com/docs/integrations/vectorstores/faiss |
 
 ---
 
