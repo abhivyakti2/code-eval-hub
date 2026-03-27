@@ -12,7 +12,7 @@
 2. [Target Architecture Overview](#2-target-architecture-overview)
 3. [Tech Stack](#3-tech-stack)
 4. [RAG Design Decisions](#4-rag-design-decisions)
-5. [Database Schema (SQL — no ORM)](#5-database-schema-sql--no-orm)
+5. [Database Schema (Prisma ORM)](#5-database-schema-prisma-orm)
 6. [Phase 1 — Cleanup & Rename](#phase-1--cleanup--rename)
 7. [Phase 2 — GitHub API Integration](#phase-2--github-api-integration)
 8. [Phase 3 — Database Changes](#phase-3--database-changes)
@@ -45,7 +45,7 @@ app/
 │       └── [id]/edit/page.tsx      ← Edit form
 ├── lib/
 │   ├── actions.ts                  ← ALL server actions (create/update/delete/auth)
-│   ├── data.ts                     ← ALL read queries (PostgreSQL via `postgres` npm)
+│   ├── data.ts                     ← ALL read queries (PostgreSQL via Prisma ORM)
 │   ├── definitions.ts              ← TypeScript type definitions
 │   ├── placeholder-data.ts         ← Seed data
 │   └── utils.ts                    ← formatCurrency, generatePagination, etc.
@@ -122,7 +122,7 @@ app/
 | Frontend / SSR | Next.js 15 (App Router) | Keep existing setup |
 | Styling | Tailwind CSS + Heroicons | Keep existing setup |
 | Auth | NextAuth v5 beta | Keep unchanged |
-| Database | PostgreSQL + `postgres` npm | Keep direct SQL pattern |
+| Database | PostgreSQL + Prisma ORM | Replace direct SQL with Prisma Client |
 | Validation | Zod | Keep, add GitHub URL schema |
 | Server-side data mutations | Next.js Server Actions | Repurpose existing pattern |
 | Client-side dynamic fetching | TanStack Query (`@tanstack/react-query`) | Add for chat / question regeneration |
@@ -173,120 +173,162 @@ GitHub's `GET /repos/{owner}/{repo}/commits?since={ISO_date}` endpoint returns o
 
 ---
 
-## 5. Database Schema (SQL — no ORM)
+## 5. Database Schema (Prisma ORM)
 
-> The project uses `postgres` npm with raw SQL.  Add the new tables via a migration script at `app/seed/route.ts` (which already exists for seeding).
+> The project currently uses the `postgres` npm package with raw SQL.  We migrate to **Prisma** for type-safe queries, automatic migrations, and generated TypeScript types.
 
-### 5.1 New Tables
+### 5.1 Install Prisma
 
-```sql
--- Users table already exists; keep it.
-
-CREATE TABLE IF NOT EXISTS repositories (
-  id            UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  github_url    TEXT NOT NULL,
-  owner         TEXT NOT NULL,
-  name          TEXT NOT NULL,
-  description   TEXT,
-  stars         INT DEFAULT 0,
-  forks         INT DEFAULT 0,
-  language      TEXT,
-  last_commit_sha TEXT,
-  last_ingested_at TIMESTAMPTZ,
-  created_at    TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS contributors (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  repository_id   UUID NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
-  github_login    TEXT NOT NULL,
-  avatar_url      TEXT,
-  total_commits   INT DEFAULT 0,
-  summary         TEXT,          -- AI-generated contributor summary
-  created_at      TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(repository_id, github_login)
-);
-
-CREATE TABLE IF NOT EXISTS chats (
-  id            UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  repository_id UUID NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
-  title         TEXT NOT NULL DEFAULT 'New Chat',
-  created_at    TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS messages (
-  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  chat_id    UUID NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-  role       TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-  content    TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS generated_questions (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  contributor_id  UUID NOT NULL REFERENCES contributors(id) ON DELETE CASCADE,
-  question_type   TEXT NOT NULL DEFAULT 'general',
-  questions       JSONB NOT NULL,   -- array of question strings
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
+```bash
+pnpm add @prisma/client
+pnpm add -D prisma
+npx prisma init --datasource-provider postgresql
 ```
 
-### 5.2 TypeScript Definitions
+This creates:
+- `prisma/schema.prisma` — the schema definition file
+- `.env` — with a `DATABASE_URL` placeholder (Prisma reads `.env`, not `.env.local`)
 
-**File:** `app/lib/definitions.ts` — ADD the following (keep existing User type):
+**File:** `.env` — set the connection string:
+
+```bash
+# For local development (no SSL required):
+DATABASE_URL="postgresql://YOUR_DB_USER:YOUR_DB_PASSWORD@localhost:5432/code_eval_hub"
+
+# For production / Vercel / hosted Postgres (SSL required):
+# DATABASE_URL="postgresql://YOUR_DB_USER:YOUR_DB_PASSWORD@host:5432/code_eval_hub?sslmode=require"
+```
+
+> **Local vs production:** Only add `?sslmode=require` when connecting to a hosted/production database (e.g., Supabase, Neon, Render, Vercel Postgres).  Omit it for local PostgreSQL to avoid connection errors.
+> If deploying to Vercel or another serverless platform, also add `DATABASE_URL` to the environment variables.  For **connection-pooled** databases (e.g., Supabase PgBouncer), append `?pgbouncer=true&connection_limit=1` — this prevents serverless functions from opening too many simultaneous database connections.
+
+### 5.2 Prisma Schema
+
+**File:** `prisma/schema.prisma` — REPLACE the default with:
+
+> **Note:** This schema uses `@default(cuid())` for IDs.  This is for a **fresh project**.  If you are migrating an existing database that already has UUID primary keys (from the original invoice dashboard), change `@id @default(cuid())` to `@id @default(dbgenerated("gen_random_uuid()")) @db.Uuid` on every model and update all `String` id fields to use `@db.Uuid`.
+
+```prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String       @id @default(cuid())
+  name         String
+  email        String       @unique
+  password     String
+  repositories Repository[]
+  chats        Chat[]
+  createdAt    DateTime     @default(now())
+}
+
+model Repository {
+  id             String        @id @default(cuid())
+  userId         String
+  githubUrl      String
+  owner          String
+  name           String
+  description    String?
+  stars          Int           @default(0)
+  forks          Int           @default(0)
+  language       String?
+  lastCommitSha  String?
+  lastIngestedAt DateTime?
+  createdAt      DateTime      @default(now())
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contributors   Contributor[]
+  chats          Chat[]
+
+  @@unique([userId, githubUrl])
+  // ↑ Prisma auto-names this constraint "userId_githubUrl".
+  //   In actions, query it with: prisma.repository.findUnique({ where: { userId_githubUrl: { userId, githubUrl } } })
+}
+
+model Contributor {
+  id           String              @id @default(cuid())
+  repositoryId String
+  githubLogin  String
+  avatarUrl    String?
+  totalCommits Int                 @default(0)
+  summary      String?
+  createdAt    DateTime            @default(now())
+  repository   Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  questions    GeneratedQuestion[]
+
+  @@unique([repositoryId, githubLogin])
+  // ↑ Prisma auto-names this constraint "repositoryId_githubLogin".
+  //   In actions, query it with: prisma.contributor.update({ where: { repositoryId_githubLogin: { repositoryId, githubLogin } } })
+}
+
+model Chat {
+  id           String     @id @default(cuid())
+  userId       String
+  repositoryId String
+  title        String     @default("New Chat")
+  createdAt    DateTime   @default(now())
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  messages     Message[]
+}
+
+enum MessageRole {
+  user
+  assistant
+}
+
+model Message {
+  id        String      @id @default(cuid())
+  chatId    String
+  role      MessageRole
+  content   String
+  createdAt DateTime    @default(now())
+  chat      Chat        @relation(fields: [chatId], references: [id], onDelete: Cascade)
+}
+
+model GeneratedQuestion {
+  id            String      @id @default(cuid())
+  contributorId String
+  questionType  String      @default("general")
+  questions     Json
+  createdAt     DateTime    @default(now())
+  contributor   Contributor @relation(fields: [contributorId], references: [id], onDelete: Cascade)
+}
+```
+
+### 5.3 Run the Migration
+
+```bash
+npx prisma migrate dev --name init
+```
+
+This creates the tables in your database and generates the Prisma Client.  Run this once on initial setup; re-run with a new migration name each time the schema changes.
+
+### 5.4 TypeScript Definitions
+
+With Prisma, TypeScript types are **auto-generated** from the schema.  Instead of manually writing types in `definitions.ts`, import them directly from `@prisma/client`:
+
+**File:** `app/lib/definitions.ts` — REPLACE with:
 
 ```typescript
-export type Repository = {
-  id: string;
-  user_id: string;
-  github_url: string;
-  owner: string;
-  name: string;
-  description: string | null;
-  stars: number;
-  forks: number;
-  language: string | null;
-  last_commit_sha: string | null;
-  last_ingested_at: string | null;
-  created_at: string;
-};
-
-export type Contributor = {
-  id: string;
-  repository_id: string;
-  github_login: string;
-  avatar_url: string | null;
-  total_commits: number;
-  summary: string | null;
-  created_at: string;
-};
-
-export type Chat = {
-  id: string;
-  user_id: string;
-  repository_id: string;
-  title: string;
-  created_at: string;
-};
-
-export type Message = {
-  id: string;
-  chat_id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  created_at: string;
-};
-
-export type GeneratedQuestion = {
-  id: string;
-  contributor_id: string;
-  question_type: string;
-  questions: string[];
-  created_at: string;
-};
+// Re-export Prisma-generated types for use across the application.
+// These are automatically kept in sync with prisma/schema.prisma.
+export type {
+  User,
+  Repository,
+  Contributor,
+  Chat,
+  Message,
+  GeneratedQuestion,
+} from '@prisma/client';
 ```
+
+> After running `npx prisma generate` (or `npx prisma migrate dev`), all model types are available from `@prisma/client` with full TypeScript intellisense.
 
 ---
 
@@ -322,10 +364,11 @@ rm    public/hero-mobile.png
 - `app/ui/dashboard/nav-links.tsx` — update links
 - `app/ui/button.tsx` — keep as-is
 - `app/ui/skeletons.tsx` — keep, add new skeleton variants
-- `app/lib/actions.ts` — repurpose (remove invoice CRUD, keep auth)
-- `app/lib/data.ts` — repurpose (remove invoice/customer queries)
-- `app/lib/definitions.ts` — keep User type, add new types
-- `auth.ts`, `auth.config.ts` — keep unchanged
+- `app/lib/actions.ts` — repurpose (remove invoice CRUD, keep auth; swap `postgres` → Prisma)
+- `app/lib/data.ts` — repurpose (remove invoice/customer queries; swap `postgres` → Prisma)
+- `app/lib/definitions.ts` — replace with Prisma re-exports (see Phase 3)
+- `auth.ts` — **MODIFY**: swap `postgres` import for Prisma (see Phase 3)
+- `auth.config.ts` — keep unchanged
 - `next.config.ts`, `tailwind.config.ts`, `tsconfig.json` — keep unchanged
 
 ### Step 1.3 — Rename dashboard overview route
@@ -476,117 +519,140 @@ const GitHubUrlSchema = z.string().url().refine(
 
 ## Phase 3 — Database Changes
 
-### Step 3.1 — Run migration in the seed route
+> **Key shift:** Every `import postgres from 'postgres'` and `const sql = postgres(...)` is removed.  All DB access goes through the **Prisma Client** singleton.
 
-**File:** `app/seed/route.ts` — REPLACE its full content with:
+### Step 3.1 — Install Prisma and initialise (if not done in Section 5)
 
-```typescript
-import postgres from 'postgres';
-import { NextResponse } from 'next/server';
-
-const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
-
-export async function GET() {
-  try {
-    await sql`
-      CREATE TABLE IF NOT EXISTS repositories (
-        id               UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-        user_id          UUID NOT NULL,
-        github_url       TEXT NOT NULL,
-        owner            TEXT NOT NULL,
-        name             TEXT NOT NULL,
-        description      TEXT,
-        stars            INT  DEFAULT 0,
-        forks            INT  DEFAULT 0,
-        language         TEXT,
-        last_commit_sha  TEXT,
-        last_ingested_at TIMESTAMPTZ,
-        created_at       TIMESTAMPTZ DEFAULT NOW()
-      )
-    `;
-
-    await sql`
-      CREATE TABLE IF NOT EXISTS contributors (
-        id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-        repository_id   UUID NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
-        github_login    TEXT NOT NULL,
-        avatar_url      TEXT,
-        total_commits   INT  DEFAULT 0,
-        summary         TEXT,
-        created_at      TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE(repository_id, github_login)
-      )
-    `;
-
-    await sql`
-      CREATE TABLE IF NOT EXISTS chats (
-        id            UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-        user_id       UUID NOT NULL,
-        repository_id UUID NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
-        title         TEXT NOT NULL DEFAULT 'New Chat',
-        created_at    TIMESTAMPTZ DEFAULT NOW()
-      )
-    `;
-
-    await sql`
-      CREATE TABLE IF NOT EXISTS messages (
-        id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-        chat_id    UUID NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-        role       TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-        content    TEXT NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `;
-
-    await sql`
-      CREATE TABLE IF NOT EXISTS generated_questions (
-        id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-        contributor_id  UUID NOT NULL REFERENCES contributors(id) ON DELETE CASCADE,
-        question_type   TEXT NOT NULL DEFAULT 'general',
-        questions       JSONB NOT NULL,
-        created_at      TIMESTAMPTZ DEFAULT NOW()
-      )
-    `;
-
-    return NextResponse.json({ message: 'Tables created successfully.' });
-  } catch (err) {
-    console.error('Migration error:', err);
-    return NextResponse.json({ error: 'Migration failed.' }, { status: 500 });
-  }
-}
+```bash
+# From the Next.js project root
+pnpm add @prisma/client
+pnpm add -D prisma
+npx prisma init --datasource-provider postgresql
 ```
 
-> Navigate to `http://localhost:3000/seed` once to run the migration.
+Set `DATABASE_URL` in `.env` (Prisma reads this file):
 
-### Step 3.2 — Replace data.ts with new queries
+```bash
+# .env
+DATABASE_URL="postgresql://YOUR_DB_USER:YOUR_DB_PASSWORD@localhost:5432/code_eval_hub"
+```
+
+Also keep your other secrets in `.env.local`:
+
+```bash
+# .env.local
+GITHUB_TOKEN=ghp_your_personal_access_token
+RAG_SERVICE_URL=http://localhost:8000
+NEXTAUTH_SECRET=your_nextauth_secret
+```
+
+### Step 3.2 — Write the Prisma schema
+
+Copy the full schema from **Section 5.2** above into `prisma/schema.prisma`.
+
+### Step 3.3 — Run the migration
+
+```bash
+npx prisma migrate dev --name init
+```
+
+This creates the SQL migration file in `prisma/migrations/`, applies it to your database, and runs `prisma generate` to produce the typed Prisma Client.
+
+> On every subsequent schema change, run `npx prisma migrate dev --name <description>`.
+
+### Step 3.4 — Create the Prisma Client singleton
+
+**File:** `app/lib/db.ts` — CREATE (prevents multiple client instances in dev hot-reloads):
+
+```typescript
+import { PrismaClient } from '@prisma/client';
+
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log:
+      process.env.NODE_ENV === 'development'
+        ? ['query', 'warn', 'error']
+        : ['error'],
+  });
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+```
+
+> Import `prisma` from this file everywhere instead of constructing `new PrismaClient()`.
+
+### Step 3.5 — Update auth.ts to use Prisma
+
+**File:** `auth.ts` — REPLACE the `postgres` block with Prisma:
+
+```typescript
+import NextAuth from 'next-auth';
+import { authConfig } from './auth.config';
+import Credentials from 'next-auth/providers/credentials';
+import { z } from 'zod';
+import bcrypt from 'bcrypt';
+import { prisma } from '@/app/lib/db';
+
+async function getUser(email: string) {
+  try {
+    return await prisma.user.findUnique({ where: { email } });
+  } catch (error) {
+    console.error('Failed to fetch user:', error);
+    throw new Error('Failed to fetch user.');
+  }
+}
+
+export const { auth, signIn, signOut } = NextAuth({
+  ...authConfig,
+  providers: [
+    Credentials({
+      async authorize(credentials) {
+        const parsedCredentials = z
+          .object({ email: z.string().email(), password: z.string().min(6) })
+          .safeParse(credentials);
+        if (parsedCredentials.success) {
+          const { email, password } = parsedCredentials.data;
+          const user = await getUser(email);
+          if (!user) return null;
+          const passwordsMatch = await bcrypt.compare(password, user.password);
+          if (passwordsMatch) return user;
+        }
+        console.log('Invalid credentials');
+        return null;
+      },
+    }),
+  ],
+});
+```
+
+> **Diff from original:** Remove `import postgres from 'postgres'`, remove `const sql = postgres(...)`, replace `sql<User[]>\`SELECT * FROM users WHERE email=${email}\`` with `prisma.user.findUnique({ where: { email } })`.
+
+### Step 3.6 — Replace data.ts with Prisma queries
 
 **File:** `app/lib/data.ts` — REPLACE its full content with:
 
 ```typescript
-import postgres from 'postgres';
-import { Repository, Contributor, Chat, Message, GeneratedQuestion } from './definitions';
-
-const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
+import { prisma } from './db';
 
 // ── Repositories ──────────────────────────────────────────────
 
-export async function fetchRepositoriesByUser(userId: string): Promise<Repository[]> {
+export async function fetchRepositoriesByUser(userId: string) {
   try {
-    return await sql<Repository[]>`
-      SELECT * FROM repositories
-      WHERE user_id = ${userId}
-      ORDER BY created_at DESC
-    `;
+    return await prisma.repository.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
   } catch (err) {
     console.error('DB Error:', err);
     throw new Error('Failed to fetch repositories.');
   }
 }
 
-export async function fetchRepositoryById(id: string): Promise<Repository | null> {
+export async function fetchRepositoryById(id: string) {
   try {
-    const rows = await sql<Repository[]>`SELECT * FROM repositories WHERE id = ${id}`;
-    return rows[0] ?? null;
+    return await prisma.repository.findUnique({ where: { id } });
   } catch (err) {
     console.error('DB Error:', err);
     throw new Error('Failed to fetch repository.');
@@ -598,16 +664,21 @@ export async function fetchFilteredRepositories(
   query: string,
   page: number,
   perPage = 8
-): Promise<Repository[]> {
-  const offset = (page - 1) * perPage;
+) {
+  const skip = (page - 1) * perPage;
   try {
-    return await sql<Repository[]>`
-      SELECT * FROM repositories
-      WHERE user_id = ${userId}
-        AND (name ILIKE ${'%' + query + '%'} OR owner ILIKE ${'%' + query + '%'})
-      ORDER BY created_at DESC
-      LIMIT ${perPage} OFFSET ${offset}
-    `;
+    return await prisma.repository.findMany({
+      where: {
+        userId,
+        OR: [
+          { name: { contains: query, mode: 'insensitive' } },
+          { owner: { contains: query, mode: 'insensitive' } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: perPage,
+    });
   } catch (err) {
     console.error('DB Error:', err);
     throw new Error('Failed to search repositories.');
@@ -620,12 +691,16 @@ export async function fetchRepositoryPages(
   perPage = 8
 ): Promise<number> {
   try {
-    const data = await sql`
-      SELECT COUNT(*) FROM repositories
-      WHERE user_id = ${userId}
-        AND (name ILIKE ${'%' + query + '%'} OR owner ILIKE ${'%' + query + '%'})
-    `;
-    return Math.ceil(Number(data[0].count) / perPage);
+    const count = await prisma.repository.count({
+      where: {
+        userId,
+        OR: [
+          { name: { contains: query, mode: 'insensitive' } },
+          { owner: { contains: query, mode: 'insensitive' } },
+        ],
+      },
+    });
+    return Math.ceil(count / perPage);
   } catch (err) {
     console.error('DB Error:', err);
     throw new Error('Failed to count repositories.');
@@ -634,13 +709,12 @@ export async function fetchRepositoryPages(
 
 // ── Contributors ──────────────────────────────────────────────
 
-export async function fetchContributorsByRepo(repositoryId: string): Promise<Contributor[]> {
+export async function fetchContributorsByRepo(repositoryId: string) {
   try {
-    return await sql<Contributor[]>`
-      SELECT * FROM contributors
-      WHERE repository_id = ${repositoryId}
-      ORDER BY total_commits DESC
-    `;
+    return await prisma.contributor.findMany({
+      where: { repositoryId },
+      orderBy: { totalCommits: 'desc' },
+    });
   } catch (err) {
     console.error('DB Error:', err);
     throw new Error('Failed to fetch contributors.');
@@ -649,16 +723,12 @@ export async function fetchContributorsByRepo(repositoryId: string): Promise<Con
 
 // ── Chats ─────────────────────────────────────────────────────
 
-export async function fetchChatsByRepo(
-  userId: string,
-  repositoryId: string
-): Promise<Chat[]> {
+export async function fetchChatsByRepo(userId: string, repositoryId: string) {
   try {
-    return await sql<Chat[]>`
-      SELECT * FROM chats
-      WHERE user_id = ${userId} AND repository_id = ${repositoryId}
-      ORDER BY created_at DESC
-    `;
+    return await prisma.chat.findMany({
+      where: { userId, repositoryId },
+      orderBy: { createdAt: 'desc' },
+    });
   } catch (err) {
     console.error('DB Error:', err);
     throw new Error('Failed to fetch chats.');
@@ -667,13 +737,12 @@ export async function fetchChatsByRepo(
 
 // ── Messages ──────────────────────────────────────────────────
 
-export async function fetchMessagesByChat(chatId: string): Promise<Message[]> {
+export async function fetchMessagesByChat(chatId: string) {
   try {
-    return await sql<Message[]>`
-      SELECT * FROM messages
-      WHERE chat_id = ${chatId}
-      ORDER BY created_at ASC
-    `;
+    return await prisma.message.findMany({
+      where: { chatId },
+      orderBy: { createdAt: 'asc' },
+    });
   } catch (err) {
     console.error('DB Error:', err);
     throw new Error('Failed to fetch messages.');
@@ -685,15 +754,12 @@ export async function fetchMessagesByChat(chatId: string): Promise<Message[]> {
 export async function fetchLatestQuestions(
   contributorId: string,
   questionType = 'general'
-): Promise<GeneratedQuestion | null> {
+) {
   try {
-    const rows = await sql<GeneratedQuestion[]>`
-      SELECT * FROM generated_questions
-      WHERE contributor_id = ${contributorId} AND question_type = ${questionType}
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
-    return rows[0] ?? null;
+    return await prisma.generatedQuestion.findFirst({
+      where: { contributorId, questionType },
+      orderBy: { createdAt: 'desc' },
+    });
   } catch (err) {
     console.error('DB Error:', err);
     throw new Error('Failed to fetch questions.');
@@ -701,28 +767,24 @@ export async function fetchLatestQuestions(
 }
 ```
 
-### Step 3.3 — Replace actions.ts
+### Step 3.7 — Replace actions.ts with Prisma mutations
 
 **File:** `app/lib/actions.ts` — REPLACE with:
 
 ```typescript
 'use server';
 
-import postgres from 'postgres';
-import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { z } from 'zod';
 import { signIn, signOut } from '@/auth';
 import { AuthError } from 'next-auth';
+import { prisma } from '@/app/lib/db';
 import {
   parseGitHubUrl,
   fetchRepoMetadata,
   fetchContributors,
-  fetchCommitsByContributor,
   fetchLatestCommitSha,
 } from '@/app/lib/github';
-
-const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
 // ── Auth ──────────────────────────────────────────────────────
 
@@ -771,39 +833,48 @@ export async function addRepository(
 
   try {
     const { owner, repo } = parseGitHubUrl(parsed.data);
-    const meta = await fetchRepoMetadata(owner, repo);
-    const latestSha = await fetchLatestCommitSha(owner, repo);
 
-    // Check if already exists before inserting so we can distinguish
-    // a genuine duplicate from a DB error.
-    const existing = await sql`
-      SELECT id FROM repositories WHERE user_id = ${userId} AND github_url = ${parsed.data}
-    `;
-    if (existing.length > 0) return { error: 'Repository already added.' };
+    const existing = await prisma.repository.findUnique({
+      where: { userId_githubUrl: { userId, githubUrl: parsed.data } },
+    });
+    if (existing) return { error: 'Repository already added.' };
 
-    const rows = await sql`
-      INSERT INTO repositories (user_id, github_url, owner, name, description, stars, forks, language, last_commit_sha)
-      VALUES (${userId}, ${parsed.data}, ${owner}, ${repo},
-              ${meta.description ?? null}, ${meta.stargazers_count}, ${meta.forks_count},
-              ${meta.language ?? null}, ${latestSha})
-      RETURNING id
-    `;
+    const [meta, latestSha] = await Promise.all([
+      fetchRepoMetadata(owner, repo),
+      fetchLatestCommitSha(owner, repo),
+    ]);
 
-    const repoId = rows[0]?.id as string;
-    if (!repoId) return { error: 'Failed to save repository.' };
+    const created = await prisma.repository.create({
+      data: {
+        userId,
+        githubUrl: parsed.data,
+        owner,
+        name: repo,
+        description: meta.description ?? null,
+        stars: meta.stargazers_count,
+        forks: meta.forks_count,
+        language: meta.language ?? null,
+        lastCommitSha: latestSha,
+      },
+    });
 
-    // Save contributors
+    // Save contributors — skipDuplicates handles reruns of addRepository gracefully.
+    // A duplicate occurs when the same repo URL is submitted a second time before
+    // the @@unique([userId, githubUrl]) check catches it, or during retries.
     const contributors = await fetchContributors(owner, repo);
-    for (const c of contributors) {
-      await sql`
-        INSERT INTO contributors (repository_id, github_login, avatar_url, total_commits)
-        VALUES (${repoId}, ${c.login}, ${c.avatar_url}, ${c.contributions})
-        ON CONFLICT (repository_id, github_login) DO NOTHING
-      `;
-    }
+    await prisma.contributor.createMany({
+      data: contributors.map((c) => ({
+        repositoryId: created.id,
+        githubLogin: c.login,
+        avatarUrl: c.avatar_url,
+        totalCommits: c.contributions,
+      })),
+      skipDuplicates: true,  // equivalent to ON CONFLICT DO NOTHING in raw SQL
+    });
 
+    revalidateTag('repositories');
     revalidatePath('/dashboard/repos');
-    return { repoId };
+    return { repoId: created.id };
   } catch (err) {
     console.error(err);
     return { error: 'Failed to fetch repository from GitHub.' };
@@ -811,7 +882,8 @@ export async function addRepository(
 }
 
 export async function deleteRepository(id: string) {
-  await sql`DELETE FROM repositories WHERE id = ${id}`;
+  await prisma.repository.delete({ where: { id } });
+  revalidateTag('repositories');
   revalidatePath('/dashboard/repos');
 }
 
@@ -820,29 +892,28 @@ export async function deleteRepository(id: string) {
 const RAG_URL = process.env.RAG_SERVICE_URL ?? 'http://localhost:8000';
 
 export async function triggerRepoIngestion(repoId: string) {
-  const repo = await sql`SELECT * FROM repositories WHERE id = ${repoId}`;
-  if (!repo[0]) throw new Error('Repository not found.');
+  const repo = await prisma.repository.findUnique({ where: { id: repoId } });
+  if (!repo) throw new Error('Repository not found.');
 
   const res = await fetch(`${RAG_URL}/ingest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       repo_id: repoId,
-      owner: repo[0].owner,
-      repo_name: repo[0].name,
-      last_sha: repo[0].last_commit_sha,
+      owner: repo.owner,
+      repo_name: repo.name,
+      last_sha: repo.lastCommitSha,
     }),
   });
 
   if (!res.ok) throw new Error('RAG ingestion failed.');
   const data = await res.json();
 
-  // Update last_ingested_at
-  await sql`
-    UPDATE repositories
-    SET last_ingested_at = NOW(), last_commit_sha = ${data.latest_sha}
-    WHERE id = ${repoId}
-  `;
+  await prisma.repository.update({
+    where: { id: repoId },
+    data: { lastIngestedAt: new Date(), lastCommitSha: data.latest_sha },
+  });
+  revalidateTag(`repo-${repoId}`);
   revalidatePath(`/dashboard/repos/${repoId}`);
 }
 
@@ -869,11 +940,10 @@ export async function generateContributorSummary(
   if (!res.ok) throw new Error('Contributor summary failed.');
   const data = await res.json();
 
-  // Persist summary in DB
-  await sql`
-    UPDATE contributors SET summary = ${data.summary}
-    WHERE repository_id = ${repoId} AND github_login = ${contributorLogin}
-  `;
+  await prisma.contributor.update({
+    where: { repositoryId_githubLogin: { repositoryId: repoId, githubLogin: contributorLogin } },
+    data: { summary: data.summary },
+  });
   return data.summary as string;
 }
 
@@ -895,27 +965,38 @@ export async function generateQuestions(
   if (!res.ok) throw new Error('Question generation failed.');
   const data = await res.json();
 
-  await sql`
-    INSERT INTO generated_questions (contributor_id, question_type, questions)
-    VALUES (${contributorId}, ${questionType}, ${JSON.stringify(data.questions)})
-  `;
+  await prisma.generatedQuestion.create({
+    data: {
+      contributorId,
+      questionType,
+      questions: data.questions,
+    },
+  });
   return data.questions as string[];
 }
 
 // ── Chat Actions ──────────────────────────────────────────────
+//
+// Revalidation strategy used throughout actions.ts:
+//   revalidateTag('repositories')         → invalidate all repo list caches
+//   revalidateTag(`repo-${repoId}`)       → invalidate single-repo caches
+//   revalidatePath('/dashboard/repos')    → force full refresh of list page SSR
+//   revalidatePath(`/dashboard/repos/${repoId}`) → force full refresh of detail page SSR
+//
+// Use BOTH revalidateTag + revalidatePath so that both cached fetches (tagged
+// with unstable_cache) and the router cache (page segments) are cleared.
 
 export async function createChat(
   userId: string,
   repositoryId: string,
   title: string
 ): Promise<string> {
-  const rows = await sql`
-    INSERT INTO chats (user_id, repository_id, title)
-    VALUES (${userId}, ${repositoryId}, ${title})
-    RETURNING id
-  `;
+  const chat = await prisma.chat.create({
+    data: { userId, repositoryId, title },
+  });
+  revalidateTag(`repo-${repositoryId}`);
   revalidatePath(`/dashboard/repos/${repositoryId}`);
-  return rows[0].id as string;
+  return chat.id;
 }
 
 export async function sendChatMessage(
@@ -924,10 +1005,9 @@ export async function sendChatMessage(
   question: string
 ): Promise<string> {
   // Save user message
-  await sql`
-    INSERT INTO messages (chat_id, role, content)
-    VALUES (${chatId}, 'user', ${question})
-  `;
+  await prisma.message.create({
+    data: { chatId, role: 'user', content: question },
+  });
 
   // Ask RAG service
   const res = await fetch(`${RAG_URL}/chat`, {
@@ -939,11 +1019,11 @@ export async function sendChatMessage(
   const data = await res.json();
 
   // Save assistant reply
-  await sql`
-    INSERT INTO messages (chat_id, role, content)
-    VALUES (${chatId}, 'assistant', ${data.answer})
-  `;
+  await prisma.message.create({
+    data: { chatId, role: 'assistant', content: data.answer },
+  });
 
+  revalidateTag(`repo-${repoId}`);
   revalidatePath(`/dashboard/repos/${repoId}`);
   return data.answer as string;
 }
@@ -951,12 +1031,11 @@ export async function sendChatMessage(
 // ── Update Detection ──────────────────────────────────────────
 
 export async function checkAndUpdateRepo(repoId: string) {
-  const rows = await sql`SELECT * FROM repositories WHERE id = ${repoId}`;
-  const repo = rows[0];
+  const repo = await prisma.repository.findUnique({ where: { id: repoId } });
   if (!repo) return;
 
   const latestSha = await fetchLatestCommitSha(repo.owner, repo.name);
-  if (latestSha !== repo.last_commit_sha) {
+  if (latestSha !== repo.lastCommitSha) {
     await triggerRepoIngestion(repoId);
   }
 }
@@ -2469,15 +2548,18 @@ revalidateTag(`repo-${repoId}`);
 
 **File:** `app/lib/data.ts` — Tag fetch calls:
 
+**File:** `app/lib/data.ts` — Tag Prisma fetch calls with `unstable_cache`:
+
 ```typescript
-// In fetchRepositoriesByUser:
-const result = await sql<Repository[]>`...`;
-// Wrap with Next.js cache (server components only):
 import { unstable_cache } from 'next/cache';
+import { prisma } from './db';
 
 export const fetchRepositoriesByUser = unstable_cache(
   async (userId: string) => {
-    return sql<Repository[]>`SELECT * FROM repositories WHERE user_id = ${userId} ORDER BY created_at DESC`;
+    return prisma.repository.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
   },
   ['repositories'],
   { tags: ['repositories'], revalidate: 60 }
@@ -2568,8 +2650,8 @@ const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/commits/HEAD`, {
 | `<Pagination />` | `<Pagination />` (reused as-is) | `app/ui/pagination.tsx` |
 | `<SideNav />` | `<SideNav />` (reused, new links) | `app/ui/dashboard/sidenav.tsx` |
 | `InvoiceForm` type | `Repository`, `Contributor` types | `app/lib/definitions.ts` |
-| `customers` table | `contributors` table | SQL migration |
-| `invoices` table | `repositories` table | SQL migration |
+| `customers` table | `contributors` table | Prisma migration |
+| `invoices` table | `repositories` table | Prisma migration |
 | Revenue chart streaming | Summary streaming via Suspense | `app/dashboard/repos/[id]/page.tsx` |
 | `loading.tsx` skeleton | `RepoTableSkeleton` | `app/ui/repos/table-skeleton.tsx` |
 | `error.tsx` | `error.tsx` per route | `app/dashboard/repos/[id]/error.tsx` |
@@ -2635,7 +2717,7 @@ Add a comparison page at `/dashboard/compare`:
 ```
 Phase 1: Cleanup           → delete/rename files
 Phase 2: GitHub lib        → create app/lib/github.ts
-Phase 3: Database          → update seed route + data.ts + definitions.ts
+Phase 3: Database          → Prisma setup + schema + migrate + db.ts + auth.ts + data.ts + actions.ts
 Phase 4: UI                → nav, pages, repo components
 Phase 5: Python RAG        → rag-service/ directory + all Python files
 Phase 6: Chat + TanStack   → providers, hooks
@@ -2643,5 +2725,5 @@ Phase 7: Optimisation      → cache tags, incremental embeddings, HTTP cache
 ```
 
 > Follow phases strictly.  Each phase depends on the previous one being complete.
-> After Phase 3, run `http://localhost:3000/seed` to create database tables.
+> After Phase 3, run `npx prisma migrate dev --name init` to create database tables and generate the Prisma Client.
 > After Phase 5, start the Python service before testing RAG features.
