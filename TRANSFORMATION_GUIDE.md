@@ -2722,6 +2722,27 @@ const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/commits/HEAD`, {
 
 ---
 
+## Official Documentation Links
+
+| Topic | Where used | Official docs |
+|---|---|---|
+| GitHub REST — repos | `fetchRepoMetadata`, rate limits | https://docs.github.com/en/rest/repos/repos#get-a-repository |
+| GitHub REST — contributors | `fetchContributors` | https://docs.github.com/en/rest/repos/repos#list-repository-contributors |
+| GitHub REST — commits (author filter) | `fetchCommitsByContributor` | https://docs.github.com/en/rest/commits/commits#list-commits |
+| GitHub REST — git trees | `fetchFileTree` | https://docs.github.com/en/rest/git/trees#get-a-tree |
+| GitHub REST — contents | `fetchFileContent` | https://docs.github.com/en/rest/repos/contents#get-repository-content |
+| GitHub REST — headers/versioning | Shared headers in `app/lib/github.ts` | https://docs.github.com/en/rest/overview/media-types#github-rest-api-media-types |
+| Prisma — schema & relations | `prisma/schema.prisma` | https://www.prisma.io/docs/orm/prisma-schema |
+| Prisma — Client API | `app/lib/db.ts`, `data.ts`, `actions.ts`, `auth.ts` | https://www.prisma.io/docs/orm/reference/prisma-client-reference |
+| Prisma — migrations | `npx prisma migrate dev` flow | https://www.prisma.io/docs/orm/prisma-migrate/workflows |
+| TanStack Query — hooks | Chat/question hooks (`useQuery`, `useMutation`) | https://tanstack.com/query/latest/docs/framework/react/reference/useQuery |
+| NextAuth — Credentials | `auth.ts` login flow | https://authjs.dev/guides/providers/credentials |
+| Next.js — Server Actions & revalidateTag | `app/lib/actions.ts` cache busting | https://nextjs.org/docs/app/building-your-application/data-fetching/server-actions-and-mutations |
+| FastAPI | `rag-service/main.py` endpoints | https://fastapi.tiangolo.com/tutorial/ |
+| LangChain + FAISS | `rag-service/vector_store.py` | https://python.langchain.com/docs/integrations/vectorstores/faiss |
+
+---
+
 ## Comparison Feature (Future Extension)
 
 Add a comparison page at `/dashboard/compare`:
