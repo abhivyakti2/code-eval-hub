@@ -2751,8 +2751,42 @@ Phase 4: UI                → nav, pages, repo components
 Phase 5: Python RAG        → rag-service/ directory + all Python files
 Phase 6: Chat + TanStack   → providers, hooks
 Phase 7: Optimisation      → cache tags, incremental embeddings, HTTP cache
+Phase 8: Deploy            → run DB migration, deploy Next.js, deploy RAG service
 ```
 
 > Follow phases strictly.  Each phase depends on the previous one being complete.
 > After Phase 3, run `npx prisma migrate dev --name init` to create database tables and generate the Prisma Client.
 > After Phase 5, start the Python service before testing RAG features.
+
+---
+
+## Deployment (Minimal, Step-by-Step)
+
+### When to integrate DB
+- **After Phase 3**: Run `npx prisma migrate dev --name init` locally against your dev database. Verify auth and repo CRUD locally.
+- **Before deploy**: Run `npx prisma migrate deploy` against the production database (from CI or a one-time script) so the schema exists before the app boots.
+- Keep `DATABASE_URL` and `NEXTAUTH_SECRET` configured in every environment (local, preview, production).
+
+### Deploy the Next.js app (Vercel)
+1. Push your branch; connect the repo to Vercel.
+2. In Vercel project settings, add env vars: `DATABASE_URL`, `NEXTAUTH_SECRET`, `GITHUB_TOKEN`, `RAG_SERVICE_URL`.
+3. Add a build command if needed (defaults are fine): `pnpm install && pnpm build`.
+4. Before first deploy to production, run `npx prisma migrate deploy` (via Vercel CLI or a one-off GitHub Action job) pointing at the production `DATABASE_URL`.
+5. Ensure `prisma generate` runs during build (it’s invoked automatically by `next build` when `@prisma/client` is present).
+
+### Deploy the Python RAG service
+- Vercel does not host long-running Python APIs well. Use a lightweight host that allows background workers:
+  - **Railway/Render/Fly.io**: Deploy `rag-service` as a single FastAPI app (`uvicorn main:app --host 0.0.0.0 --port 8000`).
+  - Set env vars: `GROQ_API_KEY`, `GITHUB_TOKEN`, `VECTOR_STORE_BUCKET`, `VECTOR_STORE_PREFIX`, `VECTOR_STORE_TMP` (e.g., `/tmp/vector-stores`), and any storage credentials (AWS/GCP/Azure/MinIO).
+  - Run `pip install -r requirements.txt` and ensure the host has sufficient disk for temporary FAISS creation (uploads afterward).
+  - Expose the public URL and set `RAG_SERVICE_URL` in Vercel to point to it.
+
+### Object storage
+- Use S3/GCS/Azure/MinIO. Provide credentials + bucket name. Confirm the Python service has network egress to the storage endpoint.
+- Make sure lifecycle rules clean up old FAISS blobs if desired.
+
+### Quick verification checklist
+- [ ] `npx prisma migrate deploy` succeeds against production DB.
+- [ ] Vercel env vars set (`DATABASE_URL`, `NEXTAUTH_SECRET`, `GITHUB_TOKEN`, `RAG_SERVICE_URL`).
+- [ ] RAG service deployed and reachable; `VECTOR_STORE_*` envs set with storage credentials.
+- [ ] First run: trigger `/ingest` for a test repo; confirm FAISS upload and metadata saved in Postgres.
