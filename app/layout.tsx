@@ -1,18 +1,20 @@
-import '@/app//ui/global.css';
+import '@/app/ui/global.css';
 import {inter} from '@/app/ui/fonts';
 import {Metadata} from 'next';
+
 export const metadata: Metadata={
   title: {
-    template: '%$s | Acme Dashboard',
-    default: 'Acme Dashboard'
+    template: '%s | CodeEvalHub',
+    default: 'CodeEvalHub'
   },
-  description: 'The official Next.js Course Dashboard, built with App Router.',
-  metadataBase: new URL('https://next-learn-dashboard.vercel.sh')
+  description: 'AI-powered GitHub repository evaluator with RAG-based chat.',
+  metadataBase: new URL('https://code-eval-hub.vercel.app') //update with actual URL
 }
+
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode; // input is object, type will also be object, for property children, type is React.ReactNode
 }) {
   return (
     <html lang="en">

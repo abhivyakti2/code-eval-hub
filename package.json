@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
+    "@prisma/client": "^6.19.2",
     "@tailwindcss/forms": "^0.5.10",
     "autoprefixer": "10.4.20",
     "bcrypt": "^5.1.1",
@@ -30,7 +31,8 @@
     "@types/react-dom": "19.0.3",
     "baseline-browser-mapping": "^2.10.8",
     "eslint": "9",
-    "eslint-config-next": "^16.2.1"
+    "eslint-config-next": "^16.2.1",
+    "prisma": "^6.19.2"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

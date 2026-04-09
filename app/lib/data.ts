@@ -1,218 +1,168 @@
-import postgres from 'postgres';
-import {
-  CustomerField,
-  CustomersTableType,
-  InvoiceForm,
-  InvoicesTable,
-  LatestInvoiceRaw,
-  Revenue,
-} from './definitions';
-import { formatCurrency } from './utils';
+import { prisma } from '@/app/lib/db';
+import { unstable_cache } from 'next/cache';
 
-const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
-// console.log(process.env.POSTGRES_URL)
-export async function fetchRevenue() {
+//Cache is shared when the data is NOT user-specific. 
+// tag based caching is for instant UI updates after change. 
+export async function fetchRepositoriesByUser(userId: string) {
   try {
-    // Artificially delay a response for demo purposes.
-    // Don't do this in production :)
-
-    console.log('Fetching revenue data...');
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-
-    const data = await sql<Revenue[]>`SELECT * FROM revenue`;
-
-    console.log('Data fetch completed after 3 seconds.');
-
-    return data;
-  } catch (error) {
-    console.error('Database Error:', error);
-    throw new Error('Failed to fetch revenue data.');
+    return await unstable_cache(
+      async () => {
+        const chats = await prisma.chat.findMany({
+          where: { userId },
+          include: { repository: true }, //means? It tells Prisma to include the related repository data for each chat.
+          orderBy: { createdAt: 'desc' },
+        });
+        //why de-duplicate repos when there can be no duplicate chats for the same repo?
+        //TODO : check if it is still possible to have multiple chats for the same repo, 
+        // if not we can remove the deduplication step.
+        const dedup = new Map(chats.map((c) => [c.repository.id, c.repository]));
+        return Array.from(dedup.values());
+      },
+      ['repositories-by-user', userId],
+      { tags: ['repositories', `user-${userId}-repositories`] }
+    )();
+  } catch (err) {
+    console.error('DB Error:', err);
+    throw new Error('Failed to fetch repositories');
   }
 }
 
-export async function fetchLatestInvoices() {
-  try {
-    const data = await sql<LatestInvoiceRaw[]>`
-      SELECT invoices.amount, customers.name, customers.image_url, customers.email, invoices.id
-      FROM invoices
-      JOIN customers ON invoices.customer_id = customers.id
-      ORDER BY invoices.date DESC
-      LIMIT 5`;
+//unstable cache is iffe run when the function is called, and it caches the result based on the provided key.
 
-    const latestInvoices = data.map((invoice) => ({
-      ...invoice,
-      amount: formatCurrency(invoice.amount),
-    }));
-    return latestInvoices;
-  } catch (error) {
-    console.error('Database Error:', error);
-    throw new Error('Failed to fetch the latest invoices.');
+export async function fetchRepositoryById(id: string) {
+  try {
+    return await unstable_cache(
+      async()=>
+        prisma.repository.findUnique({ where: { id } }),
+      ['repositories-by-id', id],
+      { tags: ['repositories', `repo-${id}`]}
+    )();
+  } catch (err) {
+    console.error('DB Error:', err);
+    throw new Error('Failed to fetch repository.');
   }
 }
 
-export async function fetchCardData() {
-  try {
-    // You can probably combine these into a single SQL query
-    // However, we are intentionally splitting them to demonstrate
-    // how to initialize multiple queries in parallel with JS.
-    const invoiceCountPromise = sql`SELECT COUNT(*) FROM invoices`;
-    const customerCountPromise = sql`SELECT COUNT(*) FROM customers`;
-    const invoiceStatusPromise = sql`SELECT
-         SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) AS "paid",
-         SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) AS "pending"
-         FROM invoices`;
-
-    const data = await Promise.all([
-      invoiceCountPromise,
-      customerCountPromise,
-      invoiceStatusPromise,
-    ]);
-
-    const numberOfInvoices = Number(data[0][0].count ?? '0');
-    const numberOfCustomers = Number(data[1][0].count ?? '0');
-    const totalPaidInvoices = formatCurrency(data[2][0].paid ?? '0');
-    const totalPendingInvoices = formatCurrency(data[2][0].pending ?? '0');
-
-    return {
-      numberOfCustomers,
-      numberOfInvoices,
-      totalPaidInvoices,
-      totalPendingInvoices,
-    };
-  } catch (error) {
-    console.error('Database Error:', error);
-    throw new Error('Failed to fetch card data.');
-  }
-}
-
-const ITEMS_PER_PAGE = 6;
-export async function fetchFilteredInvoices(
+export async function fetchFilteredRepositories(
+  //TODO: remove, idts needed. we give url, not owner or repo name. 
+  // can we get exact repo we put url of?
+  userId: string,
   query: string,
-  currentPage: number,
+  page: number,
+  perPage = 8
 ) {
-  const offset = (currentPage - 1) * ITEMS_PER_PAGE;
-
+  const skip = (page - 1) * perPage;
   try {
-    const invoices = await sql<InvoicesTable[]>
-    `SELECT
-        invoices.id,
-        invoices.amount,
-        invoices.date,
-        invoices.status,
-        customers.name,
-        customers.email,
-        customers.image_url
-      FROM invoices
-      JOIN customers ON invoices.customer_id = customers.id
-      WHERE
-        customers.name ILIKE ${`%${query}%`} OR
-        customers.email ILIKE ${`%${query}%`} OR
-        invoices.amount::text ILIKE ${`%${query}%`} OR
-        invoices.date::text ILIKE ${`%${query}%`} OR
-        invoices.status ILIKE ${`%${query}%`}
-      ORDER BY invoices.date DESC
-      LIMIT ${ITEMS_PER_PAGE} OFFSET ${offset}
-    `;
-
-    return invoices;
-  } catch (error) {
-    console.error('Database Error:', error);
-    throw new Error('Failed to fetch invoices.');
-  }
-}
-
-export async function fetchInvoicesPages(query: string) {
-  try {
-    const data = await sql`SELECT COUNT(*)
-    FROM invoices
-    JOIN customers ON invoices.customer_id = customers.id
-    WHERE
-      customers.name ILIKE ${`%${query}%`} OR
-      customers.email ILIKE ${`%${query}%`} OR
-      invoices.amount::text ILIKE ${`%${query}%`} OR
-      invoices.date::text ILIKE ${`%${query}%`} OR
-      invoices.status ILIKE ${`%${query}%`}
-  `;
-
-    const totalPages = Math.ceil(Number(data[0].count) / ITEMS_PER_PAGE);
-    return totalPages;
-  } catch (error) {
-    console.error('Database Error:', error);
-    throw new Error('Failed to fetch total number of invoices.');
-  }
-}
-
-export async function fetchInvoiceById(id: string) {
-  try {
-    const data = await sql<InvoiceForm[]>`
-      SELECT
-        invoices.id,
-        invoices.customer_id,
-        invoices.amount,
-        invoices.status
-      FROM invoices
-      WHERE invoices.id = ${id};
-    `;
-
-    const invoice = data.map((invoice) => ({
-      ...invoice,
-      // Convert amount from cents to dollars
-      amount: invoice.amount / 100,
-    }));
-
-    return invoice[0];
-  } catch (error) {
-    console.error('Database Error:', error);
-    throw new Error('Failed to fetch invoice.');
-  }
-}
-
-export async function fetchCustomers() {
-  try {
-    const customers = await sql<CustomerField[]>
-    `SELECT
-        id,
-        name
-      FROM customers
-      ORDER BY name ASC
-    `;
-
-    return customers;
+    return await unstable_cache(
+      async () =>
+        prisma.repository.findMany({
+          where: {
+             userId ,
+            repository : {
+              OR: [
+              { name: { contains: query, mode: "insensitive" } },
+              { owner: { contains: query, mode: "insensitive" } },
+            ],
+          },
+          },
+          include : { repository: true},
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: perPage,
+        }),
+      ["filtered-repositories", userId, query, String(page), String(perPage)],
+      { tags: ["repositories", `user-${userId}-repositories`] },
+    )();
   } catch (err) {
-    console.error('Database Error:', err);
-    throw new Error('Failed to fetch all customers.');
+    console.error('DB Error:', err);
+    throw new Error('Failed to search repositories.');
   }
 }
 
-export async function fetchFilteredCustomers(query: string) {
+export async function fetchRepositoryPages(
+  //TODO : can be incorporated into fetchFilteredRepositories, 
+  // do we need to keep it separate?
+  userId: string,
+  query: string,
+  perPage = 8
+): Promise<number> {
   try {
-    const data = await sql<CustomersTableType[]>`
-		SELECT
-		  customers.id,
-		  customers.name,
-		  customers.email,
-		  customers.image_url,
-		  COUNT(invoices.id) AS total_invoices,
-		  SUM(CASE WHEN invoices.status = 'pending' THEN invoices.amount ELSE 0 END) AS total_pending,
-		  SUM(CASE WHEN invoices.status = 'paid' THEN invoices.amount ELSE 0 END) AS total_paid
-		FROM customers
-		LEFT JOIN invoices ON customers.id = invoices.customer_id
-		WHERE
-		  customers.name ILIKE ${`%${query}%`} OR
-        customers.email ILIKE ${`%${query}%`}
-		GROUP BY customers.id, customers.name, customers.email, customers.image_url
-		ORDER BY customers.name ASC
-	  `;
-
-    const customers = data.map((customer) => ({
-      ...customer,
-      total_pending: formatCurrency(customer.total_pending),
-      total_paid: formatCurrency(customer.total_paid),
-    }));
-
-    return customers;
+    const count = await unstable_cache(
+      async () =>
+        prisma.chat.count({
+          where: {
+            userId,
+            repository: {
+              OR: [
+                { name: { contains: query, mode: 'insensitive' } },
+                { owner: { contains: query, mode: 'insensitive' } },
+              ],
+            },
+          },
+        }),
+      ["repositories-pages-count", userId, query, String(perPage)],
+      { tags: ["repositories", `user-${userId}-repositories`] },
+    )();
+    return Math.ceil(count / perPage);
   } catch (err) {
-    console.error('Database Error:', err);
-    throw new Error('Failed to fetch customer table.');
+    console.error('DB Error:', err);
+    throw new Error('Failed to count repositories.');
+  }
+}
+
+export async function fetchContributorsByRepo(repostroryId: string){
+  try{
+    return await unstable_cache(
+      async()=>
+        prisma.contributor.findMany({
+      where: { repostroryId},
+      orderBy: {totalCommits: 'desc'},
+    }),
+    ['contributors-by-repo', repostroryId],
+    { tags: [`repo-${repostroryId}`]}
+    )();
+  }catch(err){
+    console.error('DB Error:', err);
+    throw new Error('Failed to fetch contributors');
+  }
+}
+
+//single chat for single repo for a user
+export async function fetchChatsByRepo(userId: string, repositoryId: string) {
+  try {
+    return await prisma.chat.findMany({
+      where: { userId, repositoryId },
+      orderBy: { createdAt: 'desc' },
+    });
+  } catch (err) {
+    console.error('DB Error:', err);
+    throw new Error('Failed to fetch chats.');
+  }
+}
+
+export async function fetchMessagesByChat(chatId: string) {
+  try {
+    return await prisma.message.findMany({
+      where: { chatId },
+      orderBy: { createdAt: 'asc' },
+    });
+  } catch (err) {
+    console.error('DB Error:', err);
+    throw new Error('Failed to fetch messages.');
+  }
+}
+
+//not needed?
+export async function fetchLatestQuestions(
+  contributorId: string,
+  scope: 'contributor' | 'repository' = 'contributor') {
+  try {
+    return await prisma.generatedQuestion.findFirst({
+      where: { contributorId, scope },
+      orderBy: { createdAt: 'desc' },
+    });
+  } catch (err) {
+    console.error('DB Error:', err);
+    throw new Error('Failed to fetch questions.');
   }
 }

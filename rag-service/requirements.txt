@@ -1,0 +1,13 @@
+langchain
+langchain_core
+langchain-community
+langchain-groq
+langchain-huggingface
+faiss-cpu
+tiktoken
+python-dotenv
+sentence-transformers
+fastapi
+uvicorn
+httpx
+PyGithub

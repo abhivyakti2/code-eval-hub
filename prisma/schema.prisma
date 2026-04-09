@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+//Prisma Client = a JS library with functions like prisma.user.findMany() to query DB
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  chats     Chat[]
+  createdAt DateTime @default(now())
+}
+
+model Repository {
+  id                 String              @id @default(cuid())
+  githubId           Int                 @unique
+  githubUrl          String
+  owner              String
+  name               String
+  description        String?
+  language           String?
+  lastCommitSha      String?
+  repoFaissUri       String?
+  //where embedding is stored?
+  createdAt          DateTime            @default(now())
+  contributors       Contributor[]
+  chats              Chat[]
+  generatedQuestions GeneratedQuestion[]
+}
+
+model Contributor {
+  id                 String              @id @default(cuid())
+  repositoryId       String
+  githubLogin        String
+  avatarUrl          String?
+  totalCommits       Int                 @default(0)
+  summary            String?
+  faissUri           String?
+  generatedQuestions GeneratedQuestion[]
+  createdAt          DateTime            @default(now())
+  repository         Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, githubLogin])
+  @@index([repositoryId])
+}
+
+enum MessageFeature {
+  repo_summary
+  contributors_summary
+  generate_questions
+  repo_chat
+}
+
+model Chat {
+  id                 String              @id @default(cuid())
+  userId             String
+  repositoryId       String
+  commitSha          String?
+  // title        String     @default("New Chat"), put repo name
+  createdAt          DateTime            @default(now())
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repository         Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  messages           Message[]
+  generatedQuestions GeneratedQuestion[]
+
+  @@unique([userId, repositoryId])
+  @@index([repositoryId])
+}
+
+enum MessageRole {
+  user
+  assistant
+}
+
+model Message {
+  id        String         @id @default(cuid())
+  chatId    String
+  role      MessageRole
+  content   String
+  feature   MessageFeature
+  createdAt DateTime       @default(now())
+  chat      Chat           @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId])
+}
+
+enum QuestionScope {
+  contributor
+  repository
+}
+
+model GeneratedQuestion {
+  id            String        @id @default(cuid())
+  contributorId String?
+  repositoryId  String
+  chatId        String
+  scope         QuestionScope
+  questions     Json
+  createdAt     DateTime      @default(now())
+  contributor   Contributor?  @relation(fields: [contributorId], references: [id], onDelete: Cascade)
+  repository    Repository    @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  chat          Chat          @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([repositoryId])
+}
