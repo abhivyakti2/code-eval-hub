@@ -173,6 +173,8 @@ const GithubUrlSchema = z.string().url().refine(
 
 export type AddRepoState = { 
   error?: string | null;
+  repoId?: string;
+  chatId?: string;
   message?: string | null; 
 };
 
