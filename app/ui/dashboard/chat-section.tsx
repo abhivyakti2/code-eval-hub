@@ -10,18 +10,20 @@ const REPO_ACTIONS=[
   {id : 'ingest', label: 'Ingest Repository'},
   {id : 'chat', label: 'Ask a Question'}
 ]
-// TODO : is it best way to do this?
+// TODO : is it best way to do this? Change to correct actions
 
 export default function ChatSection({
   repoId,
   chatId,
   userId,
   githubUrl,
+  repoName,
 }: {
   repoId?: string;
   chatId?: string;
   userId: string;
   githubUrl?: string; //means may or may not have a github url?
+  repoName?: string;
 }) {
   const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([]);
   //the type of input is defined outside () why? why not inside use state() along with []? 
@@ -32,90 +34,78 @@ export default function ChatSection({
   // both ways are valid and will work correctly in TypeScript.
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [selectedAction, setSelectedAction] = useState<string | null>(null);
+  const [selectedActions, setSelectedActions] = useState<string []>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const isRepoLoaded = !!repoId && !!chatId; //if there's no repoId and chatId, 
   // it means the repo is not loaded yet, another ! means they're loaded
   // so we can show the action buttons 
 
-  //TODO : allow multiselect, answer should return all requested in order requested
   function handleSelectAction(id: string){
-    setSelectedAction((prev)=> (prev=== id ? null : id))
+    setSelectedActions((prev)=> prev.includes(id) ? prev.filter((item)=> item !==id) : [...prev, id])
   }
 
-  function handleUnselectAction(){
-    setSelectedAction(null);
+  function handleUnselectAction(id: string){
+    setSelectedActions((prev)=> prev.filter((item)=> item !== id));
   }
 
   async function handleSend() {
-    if(!isRepoLoaded || sending) return;
+    if(!isRepoLoaded || sending || !!actionLoading) return;
 
     const userText = input.trim().toLowerCase();
-    // TODO : add if (!input.trim()) return; ?
-    
-    //TODO : idts ingesting repo needs to be selected by user, 
-    // remove it as a button, it will happen if repo isn't ingested 
-    // and user select some other option like summary or questions
-    if(selectedAction === 'ingest'){
-      setActionLoading('ingest');
-      try {
-        await triggerRepoIngestion(repoId!);
-        setMessages((prev)=> [
-          ...prev,
-          { role: 'user', content: '[Ingest Repository]' + (userText? `${userText}`: '')},
-          { role: 'assistant', content: 'Repository ingested successfully!' },
-        ]);
-        setInput('');
-        setSelectedAction(null);
-      }finally{
-        setActionLoading(null);
+    if(!userText && selectedActions.length === 0) return;
+
+    setInput('');
+
+    for(const actionId of selectedActions){
+      if(actionId === 'ingest'){
+        setActionLoading('ingest');
+        try{
+          await triggerRepoIngestion(repoId!);
+          setMessages((prev)=> [
+            ...prev,
+            {role: 'user', content: '[Ingest Repository]'+(userText? ` ${userText}`: '')},
+            { role: 'assistant',content: 'Repository ingested successfully!' },
+          ]);
+        }finally{
+          setActionLoading(null);
+        }
+        continue;
       }
-      //UNDERSTAND BETTER :
-      //catch not needed? because if there's an error, it will be handled 
-      // by the global error handler and show a toast notification, and we 
-      // don't need to do anything specific here for that case.
-      return;
-    }
-    if (selectedAction === 'summary') {
       if (!userText) {
-        // No custom prompt
         setActionLoading('summary');
         try {
           const summary = await generateRepoSummary(repoId!);
           setMessages((prev) => [
             ...prev,
             { role: 'user', content: '[Generate Summary]' },
-            //TODO : this generate summary is the whole prompt? 
             { role: 'assistant', content: summary },
           ]);
-          setSelectedAction(null);
         } finally {
           setActionLoading(null);
         }
-        return;
+      } else {
+        const question = `Generate a summary of this repository focusing on: ${userText}`;
+        setSending(true);
+        setMessages((prev) => [
+          ...prev,
+          { role: 'user', content: `[Generate Summary] ${userText}` },
+        ]);
+        try {
+          const answer = await sendChatMessage(chatId!, repoId!, question);
+          setMessages((prev) => [...prev, { role: 'assistant', content: answer }]);
+        } finally {
+          setSending(false);
+        }
       }
-      // With custom prompt      
-      const question = `Generate a summary of this repository focusing on: ${userText}`;
-      // TODO : refine prompt
-      setInput('');
-      setSending(true);
-      setMessages((prev) => [
-        ...prev,
-        { role: 'user', content: `[Generate Summary] ${userText}` },
-      ]);
-      try {
-        const answer = await sendChatMessage(chatId!, repoId!, question); // why ! used? won't it make value false? no, because they're defined for sure, and ! makes them non-nullable, so it tells TypeScript that we know these values are not null or undefined at this point in the code, and it's safe to use them.
-        setMessages((prev) => [...prev, { role: 'assistant', content: answer }]);
-        setSelectedAction(null);
-      } finally {
-        setSending(false);
-      }
+    }
+  
+
+  if (selectedActions.length === 0 || selectedActions.includes('chat')) {
+    if (!userText) {
+      setSelectedActions([]);
       return;
     }
-    // Default: general chat
-    if (!userText) return;
-    setInput('');
     setSending(true);
     setMessages((prev) => [...prev, { role: 'user', content: userText }]);
     try {
@@ -125,23 +115,25 @@ export default function ChatSection({
       setSending(false);
     }
   }
+
+  setSelectedActions([]);
+}
+    // TODO : add if (!input.trim()) return; ?
+    
+    //TODO : idts ingesting repo needs to be selected by user, 
+    // remove it as a button, it will happen if repo isn't ingested 
+    // and user select some other option like summary or questions
+    
   const isDisabled = !isRepoLoaded;
-  const isSendDisabled = isDisabled || sending || !!actionLoading || (!input.trim() && selectedAction !== 'ingest');
+  const isSendDisabled = isDisabled || sending || !!actionLoading || (!input.trim() && selectedActions.length ===0);
 
   return (
-    <div className="flex flex-col rounded-lg border border-gray-200 bg-white shadow-sm">
-      <div className="border-b border-gray-200 p-4">
-        <h2 className="text-lg font-semibold">Chat with Repository</h2>
-        <p className="text-sm text-gray-500">
-          {isRepoLoaded
-            ? "Select an action or ask a question below"
-            : "Load a repository above to start chatting"}
-        </p>
-      </div>
+    <div className="flex h-[calc(100vh-4rem)] min-h-0 flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+      
       {/* TODO : don't show user load repo? */}
       {/* Messages */}
       <div
-        className="flex-1 space-y-4 overflow-y-auto p-4"
+        className="flex-1 min-h-0 space-y-4 overflow-y-auto p-4"
         style={{ minHeight: "300px", maxHeight: "500px" }}
       >
         {messages.length === 0 && (
@@ -174,7 +166,7 @@ export default function ChatSection({
         <p className="mb-2 text-xs font-medium text-gray-500 uppercase tracking-wide">
           Repository Actions
         </p>
-        <div className="flex flex-wra gap-2">
+        <div className="flex flex-wrap gap-2">
           {REPO_ACTIONS.map((action) => (
             <button
               key={action.id}
@@ -182,7 +174,7 @@ export default function ChatSection({
               disabled={isDisabled || !!actionLoading || sending}
               className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors
             ${
-              selectedAction === action.id
+              selectedActions.includes(action.id)
                 ? "border-blue-500 bg-blue-100 text-blue-700"
                 : "border-gray-300 bg-white text-gray-600 hover:border-blue:400 hover:text-blue-600"
             }
@@ -193,16 +185,18 @@ export default function ChatSection({
           ))}
         </div>
         <div className="px-4 pb-4 pt-2">
-          {selectedAction && (
+          {selectedActions.length >0 && (
             <div className='mb-2 flex items-center gap-1'>
-              <span className='inline-flex items-center gap-1 rounded-full bg-blue-500 px-3 py-1 text-xs font-medium text-white'>
-                {REPO_ACTIONS.find((a)=> a.id ===selectedAction)?.label}
-                <button onClick={handleUnselectAction}
+              {selectedActions.map((id)=>(
+                <span key= {id} className='inline-flex items-center gap-1 rounded-full bg-blue-500 px-3 py-1 text-xs font-medium text-white'>
+                {REPO_ACTIONS.find((a)=> a.id ===id)?.label}
+                <button onClick={()=>handleUnselectAction(id)}
                 className='m1-1 rounded-full hover:bg-blue-600 p-0.5'
                 aria-label="Remove selected action">
                   <XMarkIcon className='h-3 w-3'/>
                 </button>
               </span>
+              ))}
             </div>
           )}
           <div className="flex gap-2">
@@ -214,9 +208,9 @@ export default function ChatSection({
               placeholder={
                 isDisabled 
                 ? 'Load a repository to start chatting...'
-                : selectedAction === 'ingest' 
+                : selectedActions.includes('ingest') 
                 ? 'Optional: add notes (or click Send to ingest now)'
-                : selectedAction ==='summary'
+                : selectedActions.includes('summary')
                 ? 'Optional: focus area (e.g. "authentication flow")'
                 : 'Ask a question...'
               }

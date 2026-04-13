@@ -3,7 +3,7 @@
 
 import {revalidatePath, revalidateTag } from 'next/cache';
 import { redirect } from 'next/navigation';
-import {z} from 'zod';
+import { z } from 'zod';
 import { auth, signIn, signOut } from '@/auth';
 import { AuthError } from 'next-auth';
 import {prisma} from '@/app/lib/db';
@@ -66,7 +66,7 @@ export async function register( prevState: SignUpState, formData: FormData){
     }; //will only missing fields cause error? or invalid ones too?
   }
 
-  const { email, password }= validatedFields.data;
+  const { email, password } = validatedFields.data;
   const existingUser = await prisma.user.findUnique({ where: { email }, });
   if(existingUser){
     return {
@@ -157,7 +157,7 @@ export async function authenticate(prevState: LoginState | void,
 }
 
 export async function logout(){
-    await signOut({redirectTo: '/login'});
+    await signOut({redirectTo: '/login'}); // TODO : no try catch?
 }
 
 const GithubUrlSchema = z.string().url().refine(
@@ -177,6 +177,43 @@ export type AddRepoState = {
   chatId?: string;
   message?: string | null; 
 };
+
+export type ValidateRepoUrlState = {
+  valid: boolean;
+  error?: string;
+  owner?:string;
+  repo?: string;
+  normalizedURL?: string;
+}
+//is creating type bestpractice to do this? 
+
+export async function validatedGithubRepoUrl(rawUrl: string): Promise<ValidateRepoUrlState>{
+  const parsed = GithubUrlSchema.safeParse(rawUrl.trim()); //is trim needed here? i think we do it in ui file too?
+  if(!parsed.success){
+    return{
+      valid: false,
+      error: parsed.error.errors[0].message,
+    };
+  }
+
+  try{
+    const {owner, repo} = parseGithubUrl(parsed.data);
+    await fetchRepoMetadata(owner, repo); //why are we fetching metadata here? isn't validating the url enough?
+    //fetching metadata is a way to validate that the repository actually exists on GitHub and is accessible. 
+    // A URL might be well-formed but point to a non-existent repository.
+    return {
+      valid: true,
+      owner,
+      repo,
+      normalizedURL: `https://github.com/${owner}/${repo}`,
+    };
+  }catch{
+    return{
+      valid: false,
+      error: 'Repository does not exist or is not accessible.',
+    }
+  }
+}
 
 export async function addRepository(prevState: AddRepoState, formData: FormData): Promise<AddRepoState>{
   const session = await auth(); //doesn't auth run when we login? why do we need to run it again here?
@@ -208,6 +245,8 @@ export async function addRepository(prevState: AddRepoState, formData: FormData)
 
   if(!userId) return {error: 'Please login again.'};
 
+  //we're already validating the URL in the UI before submitting the form, so we can skip validation here, 
+  // but we should still do it to be safe, because users can bypass UI validation, and we shouldn't trust client input.
   const raw = formData.get('github_url') as string;
   const parsed = GithubUrlSchema.safeParse(raw);
   if(!parsed.success) return { 
@@ -228,7 +267,7 @@ export async function addRepository(prevState: AddRepoState, formData: FormData)
       where : { githubId: meta.id},
       select: { id: true},
     })
-    if(!existing){ //only add repo if userselects some feature
+    if(!existing){ //only add repo if user selects some feature
       const created = await prisma.repository.create({
         data:{
           githubId: meta.id,
@@ -262,7 +301,7 @@ export async function addRepository(prevState: AddRepoState, formData: FormData)
   revalidateTag(`repo-${createdId}`, 'max');
   revalidatePath('/dashboard'); //happens for all users? even if only one creates a new chat? 
   // yes, because the dashboard is server-rendered and the cache is shared across users.
-  redirect(`/dashboard?repoId=${createdId}&chatId=${chatId}&github_url=${encodeURIComponent(parsed.data)}`);
+  redirect(`/dashboard/chat?repoId=${createdId}&chatId=${chatId}&github_url=${encodeURIComponent(parsed.data)}&repo_name=${encodeURIComponent(repo)}`);
 }
 
 export async function deleteRepository(id: string) { 
@@ -348,10 +387,31 @@ export async function triggerRepoIngestion(repoId: string){
 }
 
 export async function generateRepoSummary(repoId: string): Promise<string> {
+  // TODO : should only happen when there's new commits, and user clicks on 
+  // "Regenerate Summary" button, or when any user first adds the repo, 
+  //but not if some user already added the repo and summary is generated, 
+  // because summary generation can be resource intensive, so we can avoid 
+  // unnecessary generation by only doing it when there are new commits, 
+  // and when repo has no stored summary
+
+  //also following check is unnecessary i think :
+
+  const repo=await prisma.repository.findUnique({
+    where: { id: repoId},
+    select: { owner: true, name:true},
+  });
+
+  if(!repo){
+    throw new Error('Repository not found.');
+  }
+
   const summarize = async ()=> fetch(`${RAG_URL}/summarize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ repo_id: repoId }),
+    body: JSON.stringify({ repo_id: repoId,
+      owner: repo.owner,
+      repo_name: repo.name,
+     }),
   });
 
   let res = await summarize();

@@ -1,6 +1,8 @@
 import { prisma } from '@/app/lib/db';
 import { unstable_cache } from 'next/cache';
 
+
+
 //Cache is shared when the data is NOT user-specific. 
 // tag based caching is for instant UI updates after change. 
 export async function fetchRepositoriesByUser(userId: string) {
@@ -18,9 +20,10 @@ export async function fetchRepositoriesByUser(userId: string) {
         const dedup = new Map(chats.map((c) => [c.repository.id, c.repository]));
         return Array.from(dedup.values());
       },
-      ['repositories-by-user', userId],
+      ['repositories-by-user', userId], // This is the cache key, which uniquely identifies the cached data. It can be any serializable value, but using an array with descriptive strings and variables (like userId) helps ensure uniqueness and clarity.
       { tags: ['repositories', `user-${userId}-repositories`] }
     )();
+    //cache key is for identifying the cached data, while tags are for grouping related cache entries together, allowing for efficient invalidation of multiple entries when related data changes.
   } catch (err) {
     console.error('DB Error:', err);
     throw new Error('Failed to fetch repositories');

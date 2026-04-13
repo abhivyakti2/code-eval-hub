@@ -41,6 +41,8 @@ class IngestRequest(BaseModel):
 
 class SummarizeRequest(BaseModel):
     repo_id: str
+    owner: str
+    repo_name: str
 
 
 class ContributorRequest(BaseModel):
@@ -113,12 +115,22 @@ def ingest_repo(data: IngestRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ingestion error: {str(e)}")
 
+
 @app.post("/summarize")
 def summarize_repo(data: SummarizeRequest):
-    owner, repo_name = _get_owner_repo(data.repo_id)
     vs = load_vector_store(data.repo_id, "repo")
     if vs is None:
-        raise HTTPException(status_code=400, detail="Repo not ingested. Call /ingest first.")
+        try:
+            latest_sha = get_latest_sha(data.owner, data.repo_name)
+            repo_text = build_repo_text(data.owner, data.repo_name)
+            create_vector_store(repo_text, data.repo_id, scope="repo")
+            vs = load_vector_store(data.repo_id, "repo")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Auto-ingestion failed: {str(e)}")
+
+    if vs is None:
+        raise HTTPException(status_code=500, detail="Vector store not available after ingestion.")
+
     chain = build_summary_chain(vs)
     summary = chain.invoke(None)
     return {"summary": summary}

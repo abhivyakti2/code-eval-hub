@@ -16,6 +16,7 @@ model User {
   chats     Chat[]
   createdAt DateTime @default(now())
 }
+// @id - primary key, cuid - generates unique string ID
 
 model Repository {
   id                 String              @id @default(cuid())
@@ -33,6 +34,7 @@ model Repository {
   chats              Chat[]
   generatedQuestions GeneratedQuestion[]
 }
+// ? because we get that from the api, and we don't know response will come or not
 
 model Contributor {
   id                 String              @id @default(cuid())
@@ -48,7 +50,10 @@ model Contributor {
 
   @@unique([repositoryId, githubLogin])
   @@index([repositoryId])
-}
+} 
+// double @ → composite unique constraint. Individually they can repeat, but together they must be unique
+//avatar, totalcommits idts needed, 
+//CHAT -> REPO -> CONTRIBUTOR, but chat n contributor both are linked to questions...
 
 enum MessageFeature {
   repo_summary
@@ -56,28 +61,34 @@ enum MessageFeature {
   generate_questions
   repo_chat
 }
+//can make repo chat a follow up option. questions should also be repo, contributor 2 types
 
 model Chat {
   id                 String              @id @default(cuid())
   userId             String
   repositoryId       String
   commitSha          String?
-  // title        String     @default("New Chat"), put repo name
+  // title        String     @default("New Chat"), put repo name w/ owner
   createdAt          DateTime            @default(now())
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   repository         Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
   messages           Message[]
   generatedQuestions GeneratedQuestion[]
-
+  //only here because linked to questions right?
   @@unique([userId, repositoryId])
   @@index([repositoryId])
-}
+}// TODO : shouldn't it be indexed based on user? same repo will not have more than 1 chat 
+// w/ a user, but different users have chats with same repo, will be easier to display 
+// single user's repos in history if indexed by user no?
+// Makes queries like findMany({ where: { repositoryId } }) faster, but we'd want user's repos i think
 
 enum MessageRole {
   user
   assistant
 }
 
+// TODO : keep a follow up link to previous question if the user isn't specifying the feature, 
+// but for 1st message in chat, what to do?
 model Message {
   id        String         @id @default(cuid())
   chatId    String
@@ -90,6 +101,7 @@ model Message {
   @@index([chatId])
 }
 
+//idts scope needed? feature mentions repo or contributor
 enum QuestionScope {
   contributor
   repository
@@ -109,3 +121,6 @@ model GeneratedQuestion {
 
   @@index([repositoryId])
 }
+//why contributorId string? won't it be necessary to generate the questions?
+// index should be based on chatid no? 
+// TODO : ig contributors can be linked to chat too? maybe repo need not be linked to questions?
