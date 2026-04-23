@@ -57,7 +57,7 @@ export async function fetchFileTree(owner:string, repo:string, sha='HEAD'){
 export async function fetchFileContent(owner:string, repo:string, path:string): Promise<string>{
     const res= await fetch(`${GITHUB_API}/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`, 
         { headers }
-    );
+    ); //encodeURIComponent is used to encode the file path, especially if it contains special characters or spaces, to ensure it is correctly interpreted in the URL.
     if(!res.ok) return ''; //why different from other functions? Because some files may be binary or too large, we can choose to return empty string instead of throwing error
     const data= await res.json();
     if(data.encoding === 'base64'){

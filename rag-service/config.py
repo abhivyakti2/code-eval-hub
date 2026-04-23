@@ -1,4 +1,4 @@
-import os
+import os   # os is a module that provides a way of using operating system dependent functionality, such as reading environment variables and working with file paths.
 import tempfile
 from dotenv import load_dotenv
 

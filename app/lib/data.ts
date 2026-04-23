@@ -20,10 +20,13 @@ export async function fetchRepositoriesByUser(userId: string) {
         const dedup = new Map(chats.map((c) => [c.repository.id, c.repository]));
         return Array.from(dedup.values());
       },
+      // TODO : check all tags are in sync
       ['repositories-by-user', userId], // This is the cache key, which uniquely identifies the cached data. It can be any serializable value, but using an array with descriptive strings and variables (like userId) helps ensure uniqueness and clarity.
       { tags: ['repositories', `user-${userId}-repositories`] }
     )();
-    //cache key is for identifying the cached data, while tags are for grouping related cache entries together, allowing for efficient invalidation of multiple entries when related data changes.
+    // TODO : cache will have recent user repos? we don't need all repos every time right? like top x repos sorted by recent chats? or repos with recent chats?
+    // TODO : add reminder for user to delete chat after a month, most chats won't be relevant after a month, and it will save cost and also make sure user won't have too many chats. for repos, we can leave them for 2 months? or longer?
+    //what's difference b/w cache key n tags? cache key is for identifying the cached data, while tags are for grouping related cache entries together, allowing for efficient invalidation of multiple entries when related data changes.
   } catch (err) {
     console.error('DB Error:', err);
     throw new Error('Failed to fetch repositories');
@@ -113,16 +116,16 @@ export async function fetchRepositoryPages(
   }
 }
 
-export async function fetchContributorsByRepo(repostroryId: string){
+export async function fetchContributorsByRepo(repositoryId: string){
   try{
     return await unstable_cache(
       async()=>
         prisma.contributor.findMany({
-      where: { repostroryId},
+      where: { repositoryId},
       orderBy: {totalCommits: 'desc'},
     }),
-    ['contributors-by-repo', repostroryId],
-    { tags: [`repo-${repostroryId}`]}
+    ['contributors-by-repo', repositoryId],
+    { tags: [`repo-${repositoryId}`]}
     )();
   }catch(err){
     console.error('DB Error:', err);
@@ -152,6 +155,35 @@ export async function fetchMessagesByChat(chatId: string) {
   } catch (err) {
     console.error('DB Error:', err);
     throw new Error('Failed to fetch messages.');
+  }
+}
+
+export async function fetchChatHistoryByUser(userId: string){
+  try{
+    return await unstable_cache(
+      async()=>
+        prisma.chat.findMany({
+          where: {userId},
+          include:{
+            repository:{
+              select:{
+                id: true,
+                name:true,
+                githubUrl: true,
+              },
+            },
+            _count:{
+              select: { messages: true},
+            },
+          },
+          orderBy: { createdAt: 'desc'},
+        }),
+        ['chat-history-by-user', userId],
+        {tags: ['repositories',`user-${userId}-repositories`]}
+    )();
+  }catch(err){
+    console.error('DB Error:', err);
+    throw new Error ('Failed to fetch chat history.');
   }
 }
 
