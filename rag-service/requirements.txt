@@ -11,4 +11,4 @@ fastapi
 uvicorn
 httpx
 PyGithub
-# These are the dependencies required for the RAG service. They include various libraries for natural language processing, vector storage, web framework, and GitHub integration. Each library serves a specific purpose in the functionality of the RAG service, such as handling language models, managing vector stores, and facilitating API interactions.
+boto3
