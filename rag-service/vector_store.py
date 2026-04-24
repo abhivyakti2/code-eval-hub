@@ -2,7 +2,8 @@
 Adapted from the YouTube RAG vector_store.py — but stores FAISS in object
 storage (no long-lived local disk). Accepts repo or contributor text.
 """
-
+import re
+import hashlib
 import os
 # os is a standard Python library that provides a way to interact with the operating system. 
 # In this code, we use os.makedirs to create a temporary directory for storing the FAISS index 
@@ -32,9 +33,21 @@ EMBEDDINGS = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 # EMBEDDINGS is an instance of the HuggingFaceEmbeddings class, which is initialized with the "all-MiniLM-L6-v2" model from Hugging Face. This embedding model will be used to convert text chunks into vector representations that can be stored in the FAISS vector store. By using this specific model, we can generate high-quality embeddings that capture the semantic meaning of the text, which will improve the performance of similarity searches when retrieving relevant documents based on user queries.
 
 
+def _sanitize_scope(scope: str) -> str:
+    # Keep only safe key chars; replace others with underscore
+    base = re.sub(r"[^0-9A-Za-z._-]+", "_", scope).strip("._-").lower()
+    if not base:
+        base = "user"
+
+    # Avoid collisions: "a[b]" and "a(b)" could sanitize the same
+    suffix = hashlib.sha1(scope.encode("utf-8")).hexdigest()[:8]
+    return f"{base}_{suffix}"
+
+
 def _object_key(repo_id: str, scope: str) -> str:
     """Return the object-storage key for a given repo + scope."""
-    return f"{VECTOR_STORE_PREFIX}/{repo_id}/{scope}.faiss"
+    safe_scope = scope if scope == "repo" else _sanitize_scope(scope)
+    return f"{VECTOR_STORE_PREFIX}/{repo_id}/{safe_scope}.faiss"
 # TODOs : idts we're keeping scope
 # The _object_key function is a helper function that constructs the object storage key for a given repository ID and scope. The key is formed by combining the VECTOR_STORE_PREFIX, the repo_id, and the scope (which can be either "repo" or a contributor login) with a ".faiss" extension. This key will be used to store and retrieve the FAISS index in object storage, allowing us to manage multiple vector stores for different repositories and contributors in an organized manner.
 
