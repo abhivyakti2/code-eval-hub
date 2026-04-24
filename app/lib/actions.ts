@@ -19,6 +19,7 @@ import {
 } from '@/app/lib/github';
 import bcrypt from 'bcrypt';
 import { MessageFeature } from '@prisma/client';
+import { AuthError } from 'next-auth';
 
 export type SignUpState = {
   errors?: { //shape matches the result of zod's flatten method, which organizes errors by field

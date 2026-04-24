@@ -51,7 +51,16 @@ export default function RepoEvaluatorSection({userId}:{userId : string}){
     const timer = setTimeout(async ()=>{ 
       //async used here, it doesn't cause any issue right?
       //await isn't allowed in non-async function
-      const result= await validatedGithubRepoUrl(value); 
+      let result;
+      try {
+        result = await validatedGithubRepoUrl(value);
+      } catch {
+        if(requestId !== requestIdRef.current) return;
+        setUrlStatus('invalid');
+        setUrlMessage('Could not validate repository right now. Please try again.');
+        setValidatedRepoName('');
+        return;
+      }
       // TODO : can wait for actual github call to validate at this point, just format checking here and then validate again when user clicks on chat with repo button, to avoid unnecessary api calls while user is typing and also provide faster feedback to user.
 
       if(requestId !== requestIdRef.current) return; 
