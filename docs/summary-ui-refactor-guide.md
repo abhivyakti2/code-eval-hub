@@ -59,9 +59,9 @@ The FAISS index location is derived from `repo_id` + scope by the RAG service it
  }
 ```
 
-### 1b. Replace `commitSha` with three purpose-specific SHA fields in `Chat`
+### 1b. Replace `commitSha` with purpose-specific SHA fields in `Chat`; add per-contributor viewed-SHA table
 
-`commitSha` was a single vague field. Replace it with three fields that track what the user has actually seen/used, enabling per-feature staleness notes.
+`commitSha` was a single vague field. Replace it with two fields on `Chat` for the two things that are naturally per-chat-session scalars (last chat message SHA, last viewed repo-summary SHA), and model per-contributor viewed SHAs as a separate join table so each contributor can be tracked independently.
 
 ```diff
  model Chat {
@@ -74,10 +74,33 @@ The FAISS index location is derived from `repo_id` + scope by the RAG service it
 +  //sha of the repo at the time user last sent a chat message
 +  lastViewedSummarySha String?
 +  //sha at which user last viewed the repo summary tab
-+  lastViewedContribSha String?
-+  //sha at which user last viewed the contributors summary tab
    createdAt            DateTime            @default(now())
++  chatContribViewedShas ChatContributorViewedSha[]
    ...
+ }
++
++// Tracks, per (chat, contributor), the contributor.lastSummarySha that was
++// current the last time the user viewed that contributor's summary.
++// Enables: contributor.lastSummarySha !== chatContribViewedShas[contributorId]
++model ChatContributorViewedSha {
++  chatId        String
++  contributorId String
++  viewedSha     String
++  updatedAt     DateTime    @updatedAt
++  chat          Chat        @relation(fields: [chatId], references: [id], onDelete: Cascade)
++  contributor   Contributor @relation(fields: [contributorId], references: [id], onDelete: Cascade)
++
++  @@id([chatId, contributorId])
++  @@index([chatId])
++}
+```
+
+Also add the back-relation on `Contributor`:
+
+```diff
+ model Contributor {
+   ...
++  chatContribViewedShas ChatContributorViewedSha[]
  }
 ```
 
@@ -98,7 +121,7 @@ The FAISS index location is derived from `repo_id` + scope by the RAG service it
 > ```sql
 > UPDATE "Message" SET features = array_remove(array_remove(features::text[], 'repo_summary'), 'contributors_summary')::\"MessageFeature\"[] WHERE features && ARRAY['repo_summary','contributors_summary']::"MessageFeature"[];
 > ```
-> Then run: `npx prisma migrate dev --name sha_tracking_and_remove_faiss_uri`
+> Then run: `npx prisma migrate dev --name sha_tracking_per_contributor_viewed`
 
 ---
 
@@ -107,7 +130,8 @@ The FAISS index location is derived from `repo_id` + scope by the RAG service it
 Add one new function. Everything else in `data.ts` stays untouched.
 
 ```ts
-// Fetch a chat together with its repository (including contributors) in one query.
+// Fetch a chat together with its repository (including contributors) and the
+// per-contributor viewed-SHA records for this chat in one query.
 // Used by ChatPage to pass repo summary state + contributor list to ChatSection.
 export async function fetchChatWithRepoAndContribs(chatId: string) {
   try {
@@ -119,6 +143,7 @@ export async function fetchChatWithRepoAndContribs(chatId: string) {
             contributors: { orderBy: { totalCommits: 'desc' } },
           },
         },
+        chatContribViewedShas: true, // per-contributor last-viewed SHA records
       },
     });
   } catch (err) {
@@ -181,19 +206,36 @@ export async function generateAndStoreContribSummary(
 }
 ```
 
-### 3d. `updateChatViewedSha` — record when user views a summary
+### 3d. `updateChatViewedSha` — record when user views the repo summary
 
-Call this whenever the user opens the summary panel so next time the staleness note can be shown accurately.
+Call this whenever the user opens the summary panel so next time the repo-summary staleness note can be shown accurately.
 
 ```ts
 export async function updateChatViewedSha(
   chatId: string,
-  field: 'lastViewedSummarySha' | 'lastViewedContribSha',
   sha: string,
 ): Promise<void> {
   await prisma.chat.update({
     where: { id: chatId },
-    data: { [field]: sha },
+    data: { lastViewedSummarySha: sha },
+  });
+}
+```
+
+### 3d-ii. `updateContribViewedSha` — record per-contributor last-viewed SHA
+
+Call this for each contributor whose summary the user views. Uses an upsert so the first open creates the row and subsequent opens update it.
+
+```ts
+export async function updateContribViewedSha(
+  chatId: string,
+  contributorId: string,
+  sha: string,
+): Promise<void> {
+  await prisma.chatContributorViewedSha.upsert({
+    where: { chatId_contributorId: { chatId, contributorId } },
+    create: { chatId, contributorId, viewedSha: sha },
+    update: { viewedSha: sha },
   });
 }
 ```
@@ -261,8 +303,11 @@ return (
       repoLastSummarySha={chatContext?.repository.lastSummarySha ?? null}
       repoStoredSummary={chatContext?.repository.repoSummary ?? null}
       chatLastViewedSummarySha={chatContext?.lastViewedSummarySha ?? null}
-      chatLastViewedContribSha={chatContext?.lastViewedContribSha ?? null}
       chatLastChatSha={chatContext?.lastChatSha ?? null}
+      // Map of contributorId → viewedSha, built from the join table rows
+      chatContribViewedShas={Object.fromEntries(
+        (chatContext?.chatContribViewedShas ?? []).map((r) => [r.contributorId, r.viewedSha])
+      )}
       contributors={
         chatContext?.repository.contributors.map((c) => ({
           id: c.id,
@@ -290,6 +335,7 @@ import {
   generateAndStoreRepoSummary,
   generateAndStoreContribSummary,
   updateChatViewedSha,
+  updateContribViewedSha,
 } from '@/app/lib/actions';
 ```
 
@@ -310,7 +356,7 @@ import {
   repoLastSummarySha,
   repoStoredSummary,
   chatLastViewedSummarySha,
-  chatLastViewedContribSha,
+  chatContribViewedShas = {},
   chatLastChatSha,
   contributors = [],
 }: {
@@ -320,7 +366,8 @@ import {
   repoLastSummarySha?: string | null;
   repoStoredSummary?: string | null;
   chatLastViewedSummarySha?: string | null;
-  chatLastViewedContribSha?: string | null;
+  // contributorId → viewedSha for each contributor the user has viewed
+  chatContribViewedShas?: Record<string, string>;
   chatLastChatSha?: string | null;
   contributors?: {
     id: string;
@@ -364,18 +411,19 @@ useEffect(() => {
   // Fetch live GitHub SHA once on open
   fetchCurrentGithubSha(repoOwner, repoName).then(setLiveGithubSha);
 
-  // Record that user has viewed the summary at the current stored SHA
+  // Record that user has viewed the repo summary at the current stored SHA
   if (chatId && repoLastSummarySha) {
-    updateChatViewedSha(chatId, 'lastViewedSummarySha', repoLastSummarySha);
+    updateChatViewedSha(chatId, repoLastSummarySha);
   }
-  if (chatId && contributors.some((c) => c.lastSummarySha)) {
-    // Use the most recent contributor summary SHA as a proxy
-    const latestContribSha = contributors
-      .map((c) => c.lastSummarySha)
-      .find(Boolean);
-    if (latestContribSha) {
-      updateChatViewedSha(chatId, 'lastViewedContribSha', latestContribSha);
-    }
+
+  // Record per-contributor: for each contributor that has a generated summary,
+  // upsert their entry in ChatContributorViewedSha
+  if (chatId) {
+    contributors
+      .filter((c) => c.lastSummarySha)
+      .forEach((c) => {
+        updateContribViewedSha(chatId, c.id, c.lastSummarySha!);
+      });
   }
 }, [viewMode]);
 ```
@@ -395,11 +443,15 @@ async function handleGenerateRepoSummary() {
 }
 
 async function handleGenerateContribSummary(login: string) {
-  if (!repoId || !liveGithubSha) return;
+  if (!repoId || !liveGithubSha || !chatId) return;
+  const contrib = contributors.find((c) => c.githubLogin === login);
+  if (!contrib) return;
   setSummaryLoading(login);
   try {
     const text = await generateAndStoreContribSummary(repoId, login, liveGithubSha);
     setContribSummaries((prev) => ({ ...prev, [login]: text }));
+    // Record that the user has now viewed the freshly generated summary
+    await updateContribViewedSha(chatId, contrib.id, liveGithubSha);
   } finally {
     setSummaryLoading(null);
   }
@@ -416,6 +468,17 @@ const repoSummaryIsStale =
 // Did user last view the repo summary at an older SHA?
 const repoUpdatedSinceViewed =
   repoLastSummarySha !== null && chatLastViewedSummarySha !== repoLastSummarySha;
+
+// Per-contributor: did the contributor's summary change since user last viewed it?
+// contributor.lastSummarySha is what was generated last;
+// chatContribViewedShas[contributor.id] is what the user last saw.
+function contribUpdatedSinceViewed(c: { id: string; lastSummarySha?: string | null }): boolean {
+  return (
+    c.lastSummarySha !== null &&
+    c.lastSummarySha !== undefined &&
+    chatContribViewedShas[c.id] !== c.lastSummarySha
+  );
+}
 
 // Is chat history using an older repo version?
 const chatIsStale =
@@ -521,8 +584,16 @@ Inside the bordered card div, replace the current single `<div>` containing mess
           const contribIsStale =
             liveGithubSha !== null && liveGithubSha !== c.lastSummarySha;
           const contribText = contribSummaries[c.githubLogin];
+          // Has the stored contributor summary changed since user last viewed it in this chat?
+          const contribNewSinceViewed = contribUpdatedSinceViewed(c);
           return (
             <div key={c.githubLogin} className="space-y-1">
+              {/* Per-contributor staleness note — shown when summary was regenerated since last view */}
+              {contribNewSinceViewed && (
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-1">
+                  ⚠ @{c.githubLogin}&apos;s summary has been updated since you last viewed it.
+                </p>
+              )}
               <button
                 onClick={() => handleGenerateContribSummary(c.githubLogin)}
                 disabled={summaryLoading === c.githubLogin || !liveGithubSha}
@@ -621,8 +692,9 @@ After all changes, search for and delete any remaining references to:
 | Comparison | Meaning | Where shown |
 |---|---|---|
 | `liveGithubSha !== repoLastSummarySha` | Repo summary is out of date | Button label becomes "Regenerate" |
-| `repoLastSummarySha !== chatLastViewedSummarySha` | User hasn't seen the latest summary | Amber note in summary panel |
-| `liveGithubSha !== contributor.lastSummarySha` | Contributor summary is out of date | Per-contributor button label |
+| `repoLastSummarySha !== chatLastViewedSummarySha` | User hasn't seen the latest repo summary | Amber note in summary panel (repo section) |
+| `liveGithubSha !== contributor.lastSummarySha` | Contributor summary is out of date vs live repo | Per-contributor button label becomes "Generate/Regenerate" |
+| `contributor.lastSummarySha !== chatContribViewedShas[contributor.id]` | User hasn't seen the latest contributor summary | Per-contributor amber note in summary panel |
 | `liveGithubSha !== chatLastChatSha` | Chat messages were sent against older code | Amber note in chat panel |
 | `liveGithubSha !== repoLastCommitSha` | Repo embeddings are stale (ingestion needed) | Handled automatically in `sendChatMessageWithFeatures` (already triggers ingestion on first message) |
 
@@ -639,5 +711,5 @@ After all changes, search for and delete any remaining references to:
 ## Sequence — returning user whose repo has new commits
 
 1. Open Summary panel → `liveGithubSha` ≠ `repoLastSummarySha` → button shows "Regenerate Repo Summary"
-2. Amber note: `repoLastSummarySha !== chatLastViewedSummarySha` → "Repository has been updated since you last viewed this summary"
-3. Same logic applies per contributor in the contributor section
+2. Amber note (repo): `repoLastSummarySha !== chatLastViewedSummarySha` → "Repository has been updated since you last viewed this summary"
+3. Per contributor: `contributor.lastSummarySha !== chatContribViewedShas[contributor.id]` → individual amber note for each contributor whose summary was regenerated since the user last viewed it
