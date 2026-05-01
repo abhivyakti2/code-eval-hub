@@ -22,7 +22,7 @@ export const authConfig = {
     //automatically adds callbackUrl to the query params when redirecting to the sign-in page,
     // which we can access in the login form to redirect the user back to the page they were trying to access after logging in.
   },
-
+  session: { strategy: "jwt", maxAge: 30 * 60 }, // TODO : 30 minutes - change to a shorter duration for testing purposes. In production, you might want to set this to a longer duration like 24 hours (24 * 60 * 60 seconds) or even more, depending on your application's needs and security requirements.
   callbacks: {
     //authorized(fixed name) - called when user tries to access a protected route. It checks if the user is authenticated and redirects them accordingly.
     //middleware, not actual logic for handling authentication, which is in the NextAuth config in auth.ts.

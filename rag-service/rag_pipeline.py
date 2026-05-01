@@ -136,43 +136,37 @@ def build_contributor_summary_chain(vector_store, login: str):
 # ── Question Generation ────────────────────────────────────────
 
 QUESTION_PROMPT = PromptTemplate(
-    template="""You are a technical interviewer. Based on the contributor's commit diffs and the
-repository code, generate 5 unique and specific evaluation questions of type: {question_type}.
-
-Guidelines:
-- Questions must be specific to THIS contributor's actual work
-- Vary difficulty (2 easy, 2 medium, 1 hard)
-- For 'scalability': focus on performance and load concerns
-- For 'optimization': focus on algorithmic or resource improvements
-- For 'ml-usage': focus on ML/AI usage if present, else data processing
-- For 'architecture': focus on design decisions
-- For 'general': mix of understanding and application
-
-Context:
-{context}
+    template="""You are a technical interviewer evaluating a contributor based on their actual code changes.
 
 Contributor: {login}
-Question type: {question_type}
+Commit diffs:
+{context}
 
-Return ONLY a numbered list of 5 questions, no preamble.
+{custom_prompt}
+
+Generate 5 specific, thoughtful evaluation questions about this contributor's actual work.
+Vary difficulty: 2 easy, 2 medium, 1 hard.
+Return ONLY a numbered list. No preamble.
 """,
-    input_variables=["context", "login", "question_type"],
+    input_variables=["context", "login", "custom_prompt"],
 )
 
 
 # TODOs : we're not using question type, so we can remove it. instead we can take specific prompt from user about type of questions they want. 
-def build_question_chain(vector_store, login: str, question_type: str):
-    retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 6})
-
-    def invoke_chain(_):
-        docs = retriever.invoke(f"{login} commit diff code changes {question_type}")
-        context = format_docs(docs)
-        prompt_value = QUESTION_PROMPT.format(
-            context=context, login=login, question_type=question_type
-        )
-        result = llm.invoke(prompt_value)
-        return StrOutputParser().invoke(result)
-
-    return invoke_chain
+def build_question_chain(vector_store, login: str, custom_prompt: str = ""):
+    retriever = vector_store.as_retriever(
+        search_type="mmr", search_kwargs={"k": 6, "fetch_k": 20}
+    )
+    return (
+        RunnableLambda(lambda _: login)
+        | RunnableParallel({
+            "context": retriever | RunnableLambda(format_docs),
+            "login": RunnablePassthrough(),
+        })
+        | RunnableLambda(lambda d: {**d, "custom_prompt": custom_prompt or "Focus on design decisions and code quality."})
+        | QUESTION_PROMPT
+        | llm
+        | StrOutputParser()
+    )
 #  why return function here unlike other chains where we return a Runnable chain? In this case, we are defining a function invoke_chain that encapsulates the entire process of retrieving relevant documents, formatting them, generating a prompt, and invoking the language model to get the final output. By returning this function, we allow the caller to execute the entire question generation process by simply calling the returned function with the appropriate input. This is different from the other chains where we return a Runnable chain that can be executed in a more modular way. Here, we are directly returning a function that performs all the necessary steps in one go when invoked.
 # TODOs : can return a chain instead of a function here? we could potentially build a Runnable chain that incorporates the retriever, formatting, prompt generation, and language model invocation in a more modular way, similar to the other chains. This would allow us to maintain consistency in how we structure our chains and make it easier to manage and extend in the future. However, for simplicity and directness in this specific case, returning a function that encapsulates the entire process is also a valid approach. It ultimately depends on how we want to structure our code and whether we anticipate needing more flexibility or modularity in this part of the pipeline.

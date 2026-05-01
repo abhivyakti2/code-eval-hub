@@ -15,16 +15,21 @@ from config import (
 )
 
 
+_s3_client = None
+
+
+# singleton ptn used here. is it ideal?
 def _client():
-    return boto3.client(
-        "s3",
-        endpoint_url=S3_ENDPOINT_URL,    # None for real AWS S3
-        aws_access_key_id=AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-        region_name=AWS_REGION,    # always "us-east-1" for Supabase
-    )
-# is this singleton class or we create a new client every time? we create a new client every time _client() is called. This is generally fine for most use cases, as boto3 clients are lightweight and can be created as needed. However, if you find that you're creating clients frequently in a short period of time, you might want to consider implementing a singleton pattern to reuse the same client instance. 
-# there's no issue with multiple clients as boto3 manages connections efficiently
+    global _s3_client
+    if _s3_client is None:
+        _s3_client = boto3.client(
+            "s3",
+            endpoint_url=S3_ENDPOINT_URL,
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            region_name=AWS_REGION
+        )
+    return _s3_client
 
 
 def upload_dir(local_path, bucket=None, key=None):

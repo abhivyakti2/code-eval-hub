@@ -8,8 +8,9 @@ import {
 import { ArrowRightIcon } from "@heroicons/react/20/solid";
 import { Button } from "./button";
 import { useActionState } from "react";
-import { register, SignUpState } from "@/app/lib/actions";
+import { register} from "@/app/lib/actions";
 import Link from "next/link";
+import { SignUpState } from "../lib/definitions";
 
 export default function SignUpForm() {
   const initialState: SignUpState = { message: null, errors: {} };
@@ -138,8 +139,7 @@ export default function SignUpForm() {
             <p className="text-sm text-red-500">{state.message}</p>
           </div>
         )}
-        {/* shows error messages apart from the field-specific ones, eg DB or login error. 
-        TODO : track which errors are being sent in message */}
+        {/* shows error messages apart from the field-specific ones: DB errors, or auth errors after account creation */}
 
         <div className="mt-4 text-center text-sm">
           <p className="text-gray-600">

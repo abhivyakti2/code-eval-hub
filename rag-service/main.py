@@ -68,6 +68,7 @@ class SummarizeRequest(BaseModel):
     repo_id: str
     owner: str
     repo_name: str
+    current_sha: str 
 
 
 class ContributorRequest(BaseModel):
@@ -75,6 +76,7 @@ class ContributorRequest(BaseModel):
     owner: str
     repo_name: str
     contributor_login: str
+    since_sha: str | None = None 
 # Todo : again we get all contributors info together, and then we can run loop one them one by one to generate their summaries one by one, and send back combned summary together.
 
 
@@ -90,6 +92,14 @@ class QuestionRequest(BaseModel):
 class ChatRequest(BaseModel):
     repo_id: str
     question: str
+
+
+class BatchContributorRequest(BaseModel):
+    repo_id: str
+    owner: str
+    repo_name: str
+    contributors: list[str]  # list of github logins
+    custom_prompt: str = ""
 
 
 # ── Helpers ────────────────────────────────────────────────────
@@ -169,7 +179,7 @@ def ingest_repo(data: IngestRequest):
     # that includes the status code and the detail message you provided. So in 
     # this case, if an exception occurs during the ingestion process, the 
     # client will receive a JSON response with a 500 status code and a message like {"detail": "Ingestion error: <error message>"}.
-
+    #  TODOs : Use update_vector_store in /ingest when last_sha is provided (delta update), and create_vector_store only for first-time ingestion.
 
 @app.post("/summarize")
 def summarize_repo(data: SummarizeRequest):
@@ -198,7 +208,7 @@ def summarize_repo(data: SummarizeRequest):
 @app.post("/contributor-summary")
 def contributor_summary(data: ContributorRequest):
     contributor_text = build_contributor_text(
-        data.owner, data.repo_name, data.contributor_login
+        data.owner, data.repo_name, data.contributor_login, since=data.since_sha
     )
 
     vs = get_or_create_vector_store(
@@ -251,6 +261,22 @@ def chat_with_repo(data: ChatRequest):
     answer = chain.invoke(data.question)
     return {"answer": answer}
 
+
+@app.post("/batch-contributor-questions")
+def batch_contributor_questions(data: BatchContributorRequest):
+    results = {}
+    for login in data.contributors:
+        contributor_text = build_contributor_text(data.owner, data.repo_name, login)
+        vs = get_or_create_vector_store(contributor_text, data.repo_id, scope=login)
+        chain_fn = build_question_chain(vs, login, data.custom_prompt)
+        raw = chain_fn(None)
+        questions = [
+            re.sub(r"^\d+[\.\)]\s*", "", line).strip()
+            for line in raw.strip().split("\n")
+            if line.strip() and re.match(r"^\d+", line.strip())
+        ]
+        results[login] = questions[:5]
+    return {"questions": results}
 
 # TODOs : how is update made? in prior embeddings? shouldn't we modify older embedding and add new changes to it and store this updated one? making new vector stores is necessary or we can do updates in old embeddings easily?
 

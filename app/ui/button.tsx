@@ -13,8 +13,8 @@ export function Button({ children, className, ...rest }: ButtonProps) {
         className,
       )}
       //how is className prop vs the button element's className working here? they have same name but they are different. the className prop is passed to Button component when it is used, and then it is combined with the default classes using clsx and passed to the button element's className. this allows us to add custom classes to the button when we use it, while still keeping the default styles.
-      //TODO : can we get prop name foe className as something else? we're using clsx to combine anyways? 
-    >
+      // standard ButtonHTMLAttributes merge pattern
+>
       {children} 
       {/* the text, icon component etc that goes inside Button component is passed as children automatically by React */}
     </button>

@@ -9,12 +9,12 @@ import {
 import { ArrowRightIcon } from "@heroicons/react/20/solid";
 import { Button } from "./button";
 import { useActionState } from "react";
-import { authenticate, LoginState } from "@/app/lib/actions";
+import { authenticate } from "@/app/lib/actions";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { LoginState } from "../lib/definitions";
 
 export default function LoginForm() {
-
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
   // we are setting callbackUrl in the login page url when we redirect to it from a protected page.
@@ -22,12 +22,14 @@ export default function LoginForm() {
   // we will be redirected to /login?callbackUrl=/dashboard by NextAuth.
   // this way, after we log in, we can redirect the user back to the page they were trying to access.
 
+  const error = searchParams.get("error");
+
   const initialState: LoginState = { message: null, errors: {} };
   // No hydration mismatch issues
   // The server renders initial state
   // After submit, React updates via action result
   // No mismatch because state flow is controlled
-  
+
   const [state, formAction, isPending] = useActionState(
     authenticate,
     initialState,
@@ -108,8 +110,11 @@ export default function LoginForm() {
         {/* sent as part of the form data to the authenticate action, 
         so that after successful login, we can redirect the user to the callbackUrl. */}
 
-        <Button className="mt-4 w-full">
-          Log in <ArrowRightIcon className="ml-auto h-5 w-5 text-gray-50" />
+        <Button className="mt-4 w-full" disabled={isPending}>
+          {isPending ? "Logging in..." : "Log in"}
+          {!isPending && (
+            <ArrowRightIcon className="ml-auto h-5 w-5 text-gray-50" />
+          )}{" "}
         </Button>
         {/*How is this Button linked to form's submission? If you don’t specify a type, then by default:
         A <button> inside a <form> behaves as type="submit"*/}
@@ -120,7 +125,11 @@ export default function LoginForm() {
             <p className="text-sm text-red-500">{state.message}</p>
           </div>
         )}
-
+        {error === "account_created_login_failed" && (
+          <p className="text-amber-600 text-sm">
+            Account created! Please log in.
+          </p>
+        )}
         <div className="mt-4 text-center text-sm">
           <p className="text-gray-600">
             Don't have an account?{" "}
@@ -137,8 +146,6 @@ export default function LoginForm() {
     </form>
   );
 }
-
-
 
 //useActionState : Not great for:
 // Real-time validation (onChange)

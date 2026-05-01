@@ -64,24 +64,22 @@ export const { auth, signIn, signOut } = NextAuth({
           if (parsedCredentials.success) {
           const { email, password } = parsedCredentials.data;
           const user = await getUser(email);
-          if (!user) return null; // next auth will handle this and return an error 
-          // to the client, we just need to return null here. 
-          // TODO : can we pass message along with null? yes, we can return { error: "Invalid credentials" } instead of null, and then on the client side we can check for error in the response from signIn and display the message accordingly.
+          if (!user) {
+            throw new Error("No user found with that email."); // surfaces as CredentialsSignin
+          }
+          //can also return just null if we don't want to specify error message, and it will still surface as CredentialsSignin error on the client side, but by throwing an error with a specific message, we can provide more context about why the sign-in failed, which can be helpful for debugging and improving the user experience on the client side. When we throw an error in the authorize function, NextAuth will catch that error and pass the message to the client side, where we can display it to the user to inform them about the reason for the failed sign-in attempt.
           
           const passwordsMatch = await bcrypt.compare(password, user.password);
-          if (passwordsMatch) return user; // but user also contains password, is it marked as private? no, it's not marked as private, but next auth will only return the properties of the user object that are not marked as private in the session object that is sent to the client side. so it will be sent to client side in session object? no, it won't be sent to the client side in the session object because we are not adding it to the session object in the session callback. we are only adding the user id to the session object, so only the user id will be available on the client side when we call getSession() or useSession() hooks from next-auth/react. the password will not be available on the client side, but it will be available in the authorize function for us to compare with the hashed password in the database.
+          if (!passwordsMatch) {
+            throw new Error("Incorrect password."); // surfaces as CredentialsSignin
+          }
+          return user; // but user also contains password, is it marked as private? no, it's not marked as private, but next auth will only return the properties of the user object that are not marked as private in the session object that is sent to the client side. so it will be sent to client side in session object? no, it won't be sent to the client side in the session object because we are not adding it to the session object in the session callback. we are only adding the user id to the session object, so only the user id will be available on the client side when we call getSession() or useSession() hooks from next-auth/react. the password will not be available on the client side, but it will be available in the authorize function for us to compare with the hashed password in the database.
         }
-        return null; //TODO : pass message here too if you want, and handle it on client side.
-      },
-    }),
+        return null; 
+    }}),
   ],
 });
 
-
-// TODO : also add auto signout after certain period of inactivity, 
-// can be done by setting session maxAge in next auth config, 
-// and also by implementing a client side timer that calls signOut 
-// after certain period of inactivity. 
 
 
 //NextAuth is a library that provides authentication and authorization for Next.js applications. It supports multiple authentication providers, including credentials, OAuth, and more. In this code, we are using the credentials provider to authenticate users with their email and password. We define the authorize function to validate the credentials and return the user object if the credentials are valid. We also use callbacks to add custom properties to the JWT token and session objects, which can be used for authentication and authorization purposes.

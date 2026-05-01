@@ -51,31 +51,6 @@ export async function fetchCommitsByContributor(owner: string, repo: string, log
     >;
 }
 
-//TODO : notneeded here right? because rag will create embeddings, and we chat with that info.
-export async function fetchFileTree(owner:string, repo:string, sha='HEAD'){
-    const res= await fetch(
-        `${GITHUB_API}/repos/${owner}/${repo}/git/trees/${sha}?recursive=1`,
-        { headers}
-    );
-    if(!res.ok) throw new Error(`GitHub API error: ${res.status}`);
-    const data=await res.json();
-    return (data.tree as {path: string; type: string; sha: string; size: number}[])
-        .filter((item)=> item.type === 'blob' && item.size< 50_000); // Filter only blobs (files), exclude large files
-}
-
-//TODO : again i think not needed. 
-export async function fetchFileContent(owner:string, repo:string, path:string): Promise<string>{
-    const res= await fetch(`${GITHUB_API}/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`, 
-        { headers }
-    ); //encodeURIComponent is used to encode the file path, especially if it contains special characters or spaces, to ensure it is correctly interpreted in the URL.
-    if(!res.ok) return ''; //why different from other functions? Because some files may be binary or too large, we can choose to return empty string instead of throwing error
-    const data= await res.json();
-    if(data.encoding === 'base64'){
-        return Buffer.from(data.content, 'base64').toString('utf-8');
-    }
-    return data.content ?? '';
-}
-
 // TODO : we check this a lot of imes so the function is needed. similarly anything repeated in multiple places should be made into a separate function to avoid code duplication and improve maintainability.
 export async function fetchLatestCommitSha(owner: string, repo: string): Promise<string> {
   const res = await fetch(

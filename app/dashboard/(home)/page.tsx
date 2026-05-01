@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { Suspense } from 'react';
 import RepoEvaluatorSection from '@/app/ui/dashboard/repo-evaluator';
+import { RepoInputSkeleton } from '@/app/ui/skeletons';
 
 //searchParams prop is passed from the layout file, which is a promise that 
 // resolves to the actual search params object. This allows us to fetch any 
@@ -31,9 +32,8 @@ export default async function DashboardPage({
       </p>
       
     
-      <Suspense fallback={<div>Loading...</div>}> 
-      {/* TODO : create a skeleton loader for this section */}
-        <RepoEvaluatorSection userId={userId} />
+      <Suspense fallback={<RepoInputSkeleton/>}> 
+        <RepoEvaluatorSection />
       </Suspense>
     </main>
   );

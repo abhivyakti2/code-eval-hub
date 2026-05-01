@@ -121,3 +121,29 @@ def get_or_create_vector_store(
     if vs is not None:
         return vs
     return create_vector_store(text, repo_id, scope)
+
+
+def update_vector_store(new_text: str, repo_id: str, scope: str = "repo") -> FAISS:
+    """Add new documents to an existing vector store (incremental update)."""
+    existing = load_vector_store(repo_id, scope)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    new_chunks = splitter.create_documents([new_text])
+    if not new_chunks:
+        return existing
+
+    new_vs = FAISS.from_documents(new_chunks, EMBEDDINGS)
+    if existing is not None:
+        existing.merge_from(new_vs)
+        updated = existing
+    else:
+        updated = new_vs
+
+    # Upload updated store
+    object_key = _object_key(repo_id, scope)
+    os.makedirs(VECTOR_STORE_TMP, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=VECTOR_STORE_TMP) as tmp:
+        path = Path(tmp) / "index"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        updated.save_local(str(path))
+        upload_dir(str(path), bucket=VECTOR_STORE_BUCKET, key=object_key)
+    return updated

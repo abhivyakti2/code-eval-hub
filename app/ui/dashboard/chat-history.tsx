@@ -2,20 +2,8 @@
 import Link from "next/link";
 import { useSearchParams } from 'next/navigation';
 import clsx from 'clsx';
+import { ChatHistoryItem } from "@/app/lib/definitions";
 
-
-//TODO : all types like this we're using for our working logic, we should put in definitions.ts
-type ChatHistoryItem={
-    id: string;
-    repositoryId: string;
-    repository: {
-        name: string;
-        githubUrl: string;
-    };
-    _count: {
-        messages: number;
-    };
-};
 
 //async(returns promise) is used for server components(they can pause befor rendering final html), so when turning a server component to a client component remove async. Async is allowed inside hooks(like useEffect), not in the client component itself
 export default function ChatHistory({chats}:{chats: ChatHistoryItem[]}){

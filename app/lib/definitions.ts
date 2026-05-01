@@ -1,90 +1,56 @@
 // This file contains type definitions for your data.
 // It describes the shape of the data, and what data type each property should accept.
-// For simplicity of teaching, we're manually defining these types.
-// However, these types are generated automatically if you're using an ORM such as Prisma.
-export type User = {
+// Types are generated automatically if you're using an ORM such as Prisma.
+
+import { MessageFeature } from "@prisma/client";
+
+
+export type SignUpState = {
+  errors?: {
+    //shape matches the result of zod's flatten method, which organizes errors by field
+    email?: string[];
+    password?: string[];
+    confirmPassword?: string[];
+  };
+  message?: string | null;
+};
+
+export type LoginState = {
+  errors?: {
+    email?: string[];
+    password?: string[];
+  };
+  message?: string | null;
+};
+// TODO : move state types to separate file? since they are used in both server actions and UI components. or keep them here since they are closely related to the actions?
+export type AddRepoState = {
+  error?: string | null;
+  repoId?: string;
+  chatId?: string;
+  message?: string | null;
+};
+// error will be about url validation or database error, message will be more general, like "Failed to add repository." or "Repository added successfully." We can use message to show success messages as well, not just error messages.
+
+export type ValidateRepoUrlState = {
+  valid: boolean;
+  error?: string;
+  owner?: string;
+  repo?: string;
+  normalizedURL?: string;
+}; //state and zod schema are different
+//is creating type bestpractice to do this?
+
+export type ChatHistoryItem = {
   id: string;
-  name: string;
-  email: string;
-  password: string;
+  repositoryId: string;
+  repository: { name: string; githubUrl: string };
+  _count: { messages: number };
 };
 
-export type Customer = {
-  id: string;
-  name: string;
-  email: string;
-  image_url: string;
-};
+export type RepoAction = MessageFeature;
 
-export type Invoice = {
-  id: string;
-  customer_id: string;
-  amount: number;
-  date: string;
-  // In TypeScript, this is called a string union type.
-  // It means that the "status" property can only be one of the two strings: 'pending' or 'paid'.
-  status: 'pending' | 'paid';
+export type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+  features?: RepoAction[];
 };
-
-export type Revenue = {
-  month: string;
-  revenue: number;
-};
-
-export type LatestInvoice = {
-  id: string;
-  name: string;
-  image_url: string;
-  email: string;
-  amount: string;
-};
-
-// The database returns a number for amount, but we later format it to a string with the formatCurrency function
-export type LatestInvoiceRaw = Omit<LatestInvoice, 'amount'> & {
-  amount: number;
-};
-
-export type InvoicesTable = {
-  id: string;
-  customer_id: string;
-  name: string;
-  email: string;
-  image_url: string;
-  date: string;
-  amount: number;
-  status: 'pending' | 'paid';
-};
-
-export type CustomersTableType = {
-  id: string;
-  name: string;
-  email: string;
-  image_url: string;
-  total_invoices: number;
-  total_pending: number;
-  total_paid: number;
-};
-
-export type FormattedCustomersTable = {
-  id: string;
-  name: string;
-  email: string;
-  image_url: string;
-  total_invoices: number;
-  total_pending: string;
-  total_paid: string;
-};
-
-export type CustomerField = {
-  id: string;
-  name: string;
-};
-
-export type InvoiceForm = {
-  id: string;
-  customer_id: string;
-  amount: number;
-  status: 'pending' | 'paid';
-};
-
-// TODO : remove these types, and any types we have used in our actual active code, i.e connected somehow in working logic.

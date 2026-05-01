@@ -49,6 +49,9 @@ def fetch_file_tree(owner: str, repo: str, sha: str = "HEAD") -> list[dict]:
     # raise_for_status() is a method provided by the httpx library that checks the HTTP response status code. If the status code indicates an error (e.g., 4xx or 5xx), this method will raise an HTTPError exception, allowing us to handle errors gracefully in our code. By calling r.raise_for_status() after making the API request, we can ensure that any issues with the request (such as authentication errors, rate limits, or other server errors) are caught and handled appropriately, rather than allowing the code to continue executing with an invalid response.
     data = r.json()
     # .json() is a method provided by the httpx library that parses the response body as JSON and returns it as a Python dictionary. In this case, we expect the response from the GitHub API to be in JSON format, containing information about the file tree of the repository at the specified commit SHA. By calling r.json(), we can easily access the data in a structured format, allowing us to extract the relevant information about the files in the repository for further processing.
+    tree = data.get("tree")
+    if tree is None:
+        raise ValueError(f"Unexpected GitHub API response for {owner}/{repo}: missing 'tree' key")
     return [
         item for item in data.get("tree", [])  # [] is default value if "tree" key is not present in the response data
         # Todos : we should do proper error handline instead of just [] right?
@@ -121,7 +124,7 @@ def build_repo_text(owner: str, repo: str) -> str:
 
 
 # for each conributor this runs 
-def build_contributor_text(owner: str, repo: str, login: str) -> str:
+def build_contributor_text(owner: str, repo: str, login: str, since: str | None = None) -> str:
     """
     Build contributor-specific text from their commit diffs.
     Each commit is prefixed with its message and date for context."""
