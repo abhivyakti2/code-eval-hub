@@ -67,3 +67,7 @@ export const generatePagination = (currentPage: number, totalPages: number) => {
     totalPages,
   ];
 };
+
+
+// TODO : remove content of this file since this isn't in our working logic. if any of our working logic had utilityfunctions, we can move them here.if all utilities are already in github.ts. and we don't need to segregate anything from the rest functions, leave it.
+// or move the helpers of server actions, and rest non server action functions here. apart from data fetch n github api ones which are to go in their respective files.

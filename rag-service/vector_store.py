@@ -1,38 +1,38 @@
 """
-Adapted from the YouTube RAG vector_store.py — but stores FAISS in object
-storage (no long-lived local disk). Accepts repo or contributor text.
+Stores FAISS in objectstorage (no long-lived local disk). Accepts repo or contributor text.
 """
+# vector_store contains functions to create and load FAISS vector stores,
+# used for storing embeddings of the repository text and contributor text.
 import re
 import hashlib
 import os
-# os is a standard Python library that provides a way to interact with the operating system. 
 # In this code, we use os.makedirs to create a temporary directory for storing the FAISS index 
-# TODOs : before uploading it to object storage. The os module also provides functions for handling file paths and other operating system-related tasks.
+# TODOs (understand) : before uploading it to object storage. The os module also provides functions for handling file paths and other operating system-related tasks.
 import tempfile
 # tempfile is a standard Python library that provides functions for creating temporary files and directories. In this code, we use tempfile.TemporaryDirectory to create a temporary directory that will be automatically cleaned up after we are done using it. This is useful for storing the FAISS index locally before uploading it to object storage, without having to worry about manually deleting the temporary files afterward.
 # TODOs : will it still be used if we setup the cloud storage? i think so, because we still need to save the FAISS index locally before uploading it to object storage, and we can use tempfile to manage the temporary directory for that purpose, ensuring that it is properly cleaned up after use.
 from pathlib import Path
-# pathlib is a standard Python library that provides an object-oriented interface for working with file system paths. In this code, we use pathlib.Path to handle file paths in a more convenient and readable way. For example, we can easily create directories, join paths, and manipulate file paths using the Path class. This helps
+# pathlib is a standard Python library that provides an object-oriented interface for working with file system paths. In this code, we use pathlib.Path to handle file paths in a more convenient and readable way. For example, we can easily create directories, join paths, and manipulate file paths using the Path class. 
 from typing import Optional
 # typing is a standard Python library that provides support for type hints. In this code, we use Optional from the typing module to indicate that a function may return either a FAISS object or None. This helps improve code readability and allows for better static type checking.
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 # langchain_text_splitters is a library that provides various text splitting strategies for processing large documents. In this code, we use RecursiveCharacterTextSplitter to split the input text into smaller chunks that can be processed by the FAISS vector store. The RecursiveCharacterTextSplitter allows us to specify a chunk size and overlap, which helps ensure that the chunks are of manageable size while still retaining some context between them.
 from langchain_huggingface import HuggingFaceEmbeddings
 # langchain_huggingface is a library that provides integration with Hugging Face models for generating embeddings. In this code, we use HuggingFaceEmbeddings to create an embedding model based on the "all-MiniLM-L6-v2" model from Hugging Face. This embedding model will be used to convert the text chunks into vector representations that can be stored in the FAISS vector store for efficient retrieval.
-#  look at other embedding models available in Hugging Face and see if there are any that might be better suited for our use case, such as code-specific embedding models.
+# TODOs : look at other embedding models available in Hugging Face and see if there are any that might be better suited for our use case, such as code-specific embedding models.
 from langchain_community.vectorstores import FAISS
 # langchain_community.vectorstores is a library that provides support for various vector store implementations, including FAISS. In this code, we use the FAISS class to create and manage a FAISS vector store, which allows us to efficiently store and retrieve vector representations of text chunks. The FAISS vector store will be used to index the embeddings generated from the input text, enabling us to perform similarity searches when retrieving relevant documents based on user queries.
-# FAISS stands for Facebook AI Similarity Search, and it is a library that provides efficient algorithms for indexing and searching large collections of high-dimensional vectors. By using FAISS, we can quickly retrieve relevant documents based on the similarity of their vector representations, which is essential for building a RAG (Retrieval-Augmented Generation) system that can provide accurate and relevant responses to user queries.
+# FAISS stands for Facebook AI Similarity Search, and it is a library that provides efficient algorithms for indexing and searching large collections of high-dimensional vectors. It is commonly used for tasks such as nearest neighbor search
 from config import VECTOR_STORE_BUCKET, VECTOR_STORE_PREFIX, VECTOR_STORE_TMP
 # config is a module that contains configuration settings for the application. In this code, we import VECTOR_STORE_BUCKET, VECTOR_STORE_PREFIX, and VECTOR_STORE_TMP from the config module. These variables likely contain the bucket name for object storage, the prefix for storing FAISS indexes in the object storage, and the temporary directory path for storing FAISS indexes locally before uploading them to object storage, respectively. By centralizing these configuration settings in a separate module, we can easily manage and update them without having to modify the main codebase.
 from storage import upload_dir, download_dir, object_exists  # implement with boto3/gcsfs/azure-sdk?
-# storage is a module that provides functions for interacting with object storage services. In this code, we import upload_dir, download_dir, and object_exists from the storage module. These functions are likely implemented using libraries such as boto3 for AWS S3, gcsfs for Google Cloud Storage, or azure-sdk for Azure Blob Storage. The upload_dir function is used to upload a local directory (containing the FAISS index) to the specified bucket and key in object storage. The download_dir function is used to download a directory from object storage to a local path. The object_exists function checks if a specific object (FAISS index) exists in the object storage at the given bucket and key. These functions allow us to manage the storage of FAISS indexes in the cloud, enabling us to load and save vector stores as needed.
 
 
 EMBEDDINGS = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 # EMBEDDINGS is an instance of the HuggingFaceEmbeddings class, which is initialized with the "all-MiniLM-L6-v2" model from Hugging Face. This embedding model will be used to convert text chunks into vector representations that can be stored in the FAISS vector store. By using this specific model, we can generate high-quality embeddings that capture the semantic meaning of the text, which will improve the performance of similarity searches when retrieving relevant documents based on user queries.
 
 
+# Todos : understand below function.
 def _sanitize_scope(scope: str) -> str:
     # Keep only safe key chars; replace others with underscore
     base = re.sub(r"[^0-9A-Za-z._-]+", "_", scope).strip("._-").lower()
@@ -87,6 +87,7 @@ def create_vector_store(text: str, repo_id: str, scope: str = "repo") -> FAISS:
     return vector_store
 # Finally, the created FAISS vector store is returned from the function, allowing the caller to use it immediately after creation if needed. This function encapsulates the entire process of creating a FAISS vector store from input text, saving it locally, uploading it to object storage, and returning the vector store instance for further use in the application.
 # store is cloud storage? Yes, in this context, "object storage" refers to a type of cloud storage that allows you to store and manage data as objects. This is different from traditional file storage or block storage. Object storage is designed for scalability and durability, making it suitable for storing large amounts of unstructured data, such as the FAISS indexes we are creating in this code. By using object storage, we can easily manage and retrieve our FAISS indexes based on repository ID and scope without having to worry about local disk space or persistence issues.
+# todos : verify do we need to store locally? or we can directly store in object storage without saving locally first? we need to save locally first because the FAISS library requires a local directory to save the index files, and then we can upload that directory to object storage. The FAISS index consists of multiple files that need to be saved together, so we can't directly stream it to object storage without first saving it locally. Once we have the index saved locally, we can easily upload it to object storage for persistent storage and later retrieval.
 
 
 def load_vector_store(repo_id: str, scope: str = "repo") -> Optional[FAISS]:
@@ -107,8 +108,8 @@ def load_vector_store(repo_id: str, scope: str = "repo") -> Optional[FAISS]:
             allow_dangerous_deserialization=True,
         )
     # we need to download the FAISS index from object storage to a local temporary directory before we can load it into a FAISS object. The download_dir function is used to download the directory containing the FAISS index from object storage to the specified local path. Once the index is downloaded, we can use FAISS.load_local to load the index into a FAISS object, which can then be used for similarity searches and other operations in our application. The allow_dangerous_deserialization=True parameter is used to allow loading of potentially unsafe data, which may be necessary in this context since we are loading a FAISS index that was created and stored by our own application.
-# but do we also download after creating first embedding? won't it be expensive?
-# what exactly is returned from load_vector_store? The load_vector_store function returns an instance of the FAISS class that represents the loaded vector store if the specified FAISS index exists in object storage. If the index does not exist, it returns None. The returned FAISS object can be used to perform similarity searches and other operations on the indexed embeddings, allowing us to retrieve relevant documents based on user queries. However, if the index is not found in object storage, returning None allows the caller to handle this case appropriately, such as by creating a new vector store from the input text.
+# todos : but do we also download after creating first embedding? won't it be expensive?
+# The load_vector_store function returns an instance of the FAISS class that represents the loaded vector store if the specified FAISS index exists in object storage. If the index does not exist, it returns None. The returned FAISS object can be used to perform similarity searches and other operations on the indexed embeddings, allowing us to retrieve relevant documents based on user queries. However, if the index is not found in object storage, returning None allows the caller to handle this case appropriately, such as by creating a new vector store from the input text.
 # object shape is : {"status": "ok", "latest_sha": latest_sha, "repo_faiss_uri": repo_faiss_uri}
 
 

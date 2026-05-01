@@ -86,3 +86,5 @@ export type InvoiceForm = {
   amount: number;
   status: 'pending' | 'paid';
 };
+
+// TODO : remove these types, and any types we have used in our actual active code, i.e connected somehow in working logic.

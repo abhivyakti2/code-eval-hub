@@ -5,6 +5,7 @@ export default function AuthLayout({
     children,
 }:{
     children: React.ReactNode
+    // layout automatically gets the children which is the content of the page that uses this layout, in this case, the login or register form.
 }){
     return (
         <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-900 to-slate-900 p-6">
@@ -14,11 +15,9 @@ export default function AuthLayout({
                     <Link href="/" className="text-3xl font-bold text-white">
                         CodeEvalHub
                     </Link>
-                    {/* <p className="max-w-sm text-sm text-slate-300">
-                        AI-powered Github repository evaluator.
-                    </p> */}
                 </div>
-                {children}
+                {children} 
+                {/* The children will be the login or register form, depending on the route. */}
             </div>
         </main>
     );

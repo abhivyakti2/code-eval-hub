@@ -1,7 +1,5 @@
 """
-Adapted from YouTube RAG rag_pipeline.py.
-Changes:
-  - Prompts are repo/code-aware instead of transcript-aware.
+  - Prompts are repo/code-aware.
   - Added separate chains for summary, contributor summary, and questions.
 """
 
@@ -20,12 +18,12 @@ llm = ChatGroq(
     groq_api_key=GROQ_API_KEY,
     model_name="llama-3.3-70b-versatile",
     temperature=0.2,
-)
+)   # The llm variable is an instance of the ChatGroq class, which is configured to use the Groq API with the specified API key, model name, and temperature. This instance will be used to send prompts to the language model and receive responses based on the defined chains in the code.
 
 
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
-# what are docs? where are they coming from? docs is a list of document objects that are retrieved from the vector store based on their relevance to the query. Each document object has a page_content attribute that contains the text content of the document. The format_docs function takes this list of document objects and formats them into a single string by joining the page_content of each document with two newline characters ("\n\n") in between. This formatted string is then used as context in the prompts sent to the language model.
+# docs is a list of document objects that are retrieved from the vector store based on their relevance to the query. Each document object has a page_content attribute that contains the text content of the document. The format_docs function takes this list of document objects and formats them into a single string by joining the page_content of each document with two newline characters ("\n\n") in between. This formatted string is then used as context in the prompts sent to the language model.
 
 
 # ── Chat (RAG Q&A) ─────────────────────────────────────────────
@@ -44,23 +42,24 @@ Question: {question}
     input_variables=["context", "question"],
 )
 #  curly braces in python string are used to indicate placeholders for variables that will be filled in later. In this case, {context} and {question} are placeholders in the template string of the CHAT_PROMPT. When we use this prompt template, we will replace these placeholders with actual values for context and question before sending it to the language model. This allows us to create dynamic prompts that can be customized based on the specific context and question we want to ask about the GitHub repository.
+#  """ means it's a multi-line string, which allows us to write the prompt in a more readable format without needing to use newline characters (\n) explicitly. This makes it easier to structure the prompt in a way that is clear and easy to understand, especially when we have multiple lines of text and placeholders for variables.
 
 
 def build_chat_chain(vector_store):
     retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 5})
     # The retriever is created from the vector store, which allows us to retrieve relevant documents based on similarity to a query. The search_type "similarity" indicates that we want to retrieve documents that are similar to the input query, and search_kwargs={"k": 5} specifies that we want to retrieve the top 5 most relevant documents. This retriever will be used in the chat chain to fetch relevant context from the repository files when a question is asked.
-    #  .as_retriever is a method that converts the vector store into a retriever object that can be used to fetch relevant documents based on a query. The search_type "similarity" indicates that the retriever will use a similarity search algorithm to find documents that are similar to the input query, and search_kwargs={"k": 5} specifies that the retriever should return the top 5 most relevant documents for each query. 
+    #  .as_retriever is a method that converts the vector store into a retriever object that can be used to fetch relevant documents based on a query. 
     parallel = RunnableParallel({
         "context": retriever | RunnableLambda(format_docs),
         "question": RunnablePassthrough(),
     })
     # RunnableParallel is used to run multiple operations in parallel. In this case, we are defining two operations: one for "context" and one for "question". For the "context" operation, we use the retriever to fetch relevant documents based on the input query, and then we format those documents using the format_docs function. For the "question" operation, we simply pass the input question through without modification using RunnablePassthrough. This allows us to prepare both the context and the question simultaneously before sending them to the language model.
-    # how des format_docs take the input? if not inside() then how does it know what to format? The format_docs function is used in conjunction with the retriever in the RunnableParallel. When the retriever fetches relevant documents based on the input query, it returns a list of document objects. The RunnableLambda takes this list of document objects as input and applies the format_docs function to it. The format_docs function then processes this list of documents and formats them into a single string that can be used as context for the language model. So, the input to format_docs is the output from the retriever, which is passed through the RunnableLambda in the parallel execution.
+    # how does format_docs take the input? if not inside() then how does it know what to format? The format_docs function is used in conjunction with the retriever in the RunnableParallel. When the retriever fetches relevant documents based on the input query, it returns a list of document objects. The RunnableLambda takes this list of document objects as input and applies the format_docs function to it. The format_docs function then processes this list of documents and formats them into a single string that can be used as context for the language model. So, the input to format_docs is the output from the retriever, which is passed through the RunnableLambda in the parallel execution.
     # similarly how does RunnablePassthrough know what to pass through? RunnablePassthrough is designed to simply pass the input it receives through without any modification. In the context of the RunnableParallel, when we define "question": RunnablePassthrough(), it means that whatever input is provided for the "question" key will be passed through as-is. The RunnableParallel will take care of routing the appropriate input to the RunnablePassthrough, so when a question is asked, it will be directly passed through to the next step in the chain without any changes.
-    # maybe the function is used to convert to some specific format, instead of passing question as is.
     return parallel | CHAT_PROMPT | llm | StrOutputParser()
 # | is the operator used to chain together different operations in a sequence. In this case, we are chaining together the parallel execution of retrieving context and passing through the question, then feeding that into the CHAT_PROMPT to generate a prompt for the language model, which is then sent to the llm (language model) for processing, and finally parsing the output using StrOutputParser to ensure it is in string format. This creates a complete pipeline for handling a question about the GitHub repository, retrieving relevant context, and generating an answer based on that context.
-
+# why do we want to run them in parallel? can't we run them separately n combine? We could run them separately and combine the results, but using RunnableParallel allows us to execute both operations simultaneously, which can be more efficient. When a question is asked, we want to retrieve the relevant context from the repository files and also have the question ready to be processed by the language model. By running these operations in parallel, we can prepare both the context and the question at the same time, which can reduce latency and improve the overall performance of the chat chain. Additionally, it simplifies the code by allowing us to define both operations in a single step rather than having to manage separate steps for retrieving context and handling the question.
+# we're returning a chain that can be invoked later with a question input, and when invoked, it will execute the entire sequence of retrieving context, generating the prompt, and getting the answer from the language model. This allows us to create a reusable chat chain that can handle multiple questions without needing to redefine the process each time.
 
 # ── Repo Summary ───────────────────────────────────────────────
 
@@ -83,11 +82,8 @@ Write your summary in clear paragraphs.
 # when we use SUMMARY_PROMPT in the build_summary_chain, we will replace the {context} placeholder with the actual formatted repository code that we retrieve from the vector store. This allows us to create a dynamic prompt that provides the language model with the necessary context to generate a summary of the repository.
 
 
-# without prompt how does chain find out relevant docs? The chain finds relevant documents through the retriever that is created from the vector store. When we build the summary chain, we use the retriever to fetch relevant documents based on similarity to a query. In this case, since we are generating a summary of the repository, we can use a broad query like "Give me a full overview of this repository" to retrieve a wide range of relevant documents from the vector store. The retrieved documents are then formatted and passed as context to the SUMMARY_PROMPT, which allows the language model to generate a comprehensive summary based on the provided code context. So, even without a specific question, we can still retrieve relevant documents by using a general query that encourages the retriever to fetch a broad set of information about the repository.
 def build_summary_chain(vector_store):
     retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 10})
-    # For summary we don't need a question passthrough — fetch broad context?
-    # Yes, for generating a summary of the repository, we want to retrieve a broader context from the vector store to provide the language model with enough information about the repository's code. By setting search_kwargs={"k": 10}, we are retrieving the top 10 most relevant documents from the vector store, which should give us a comprehensive view of the repository's codebase. This allows the language model to analyze the code and generate a more accurate and detailed summary based on the provided context.
     return (
         RunnableLambda(lambda _: "Give me a full overview of this repository")
         | RunnableParallel({"context": retriever | RunnableLambda(format_docs)})
@@ -96,7 +92,8 @@ def build_summary_chain(vector_store):
         | StrOutputParser()
     )
 # what's the _ for in lambda? In Python, the underscore (_) is often used as a placeholder variable name when the actual value is not important or will not be used. In this case, the lambda function is defined as lambda _: "Give me a full overview of this repository", which means that it takes an input (represented by the underscore) but ignores it and always returns the same string "Give me a full overview of this repository". This is a common convention to indicate that the input to the lambda function is not relevant to its output.
-#  TODOs : trace flow of data through this chain to understand how it works end-to-end, especially how the context is built and passed to the prompt, and how the final output is generated and parsed.
+# TODOs : we should take broader context for summary, like just 10 documents may not be enough to capture the full scope of the repository, especially for larger repositories. We can consider increasing the number of documents retrieved or implementing a more sophisticated method for selecting which documents to include in the context for the summary. This way, we can ensure that the language model has enough information to generate a comprehensive and accurate summary of the repository.
+# TODOs : trace flow of data through this chain to understand how it works end-to-end, especially how the context is built and passed to the prompt, and how the final output is generated and parsed.
 
 # ── Contributor Summary ────────────────────────────────────────
 
@@ -116,17 +113,15 @@ Be factual and professional.
 """,
     input_variables=["context", "login"],
 )
+# Todos : refine the prompt myself.
 
 
 def build_contributor_summary_chain(vector_store, login: str):
     # TODOs : remove logs later
-    print("[build_contributor_summary_chain] start", {"login": login})
-
     retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 8})
-    print("[build_contributor_summary_chain] retriever_ready", {"k": 8})
-    
     return (
         RunnableLambda(lambda _: login)
+        # lambda is used here to create a simple function that takes an input (which is ignored) and returns the login variable. This allows us to pass the login information into the RunnableParallel, where it can be used as part of the context for generating the contributor summary. The retriever will fetch relevant commit diffs based on the login, and then both the context and login will be passed to the CONTRIBUTOR_PROMPT to generate a summary of the contributor's activity and contributions to the codebase.
         | RunnableParallel({
             "context": retriever | RunnableLambda(format_docs),
             "login": RunnablePassthrough(),
@@ -135,6 +130,7 @@ def build_contributor_summary_chain(vector_store, login: str):
         | llm
         | StrOutputParser()
     )
+# we're always starting with runnable in a chain, why? and why not just pass login directly? does chain not work if we just pass login directly to the prompt without using a lambda? The reason we start with a RunnableLambda in the chain is to create a function that can be executed as part of the chain. In this case, we want to pass the login information into the chain so that it can be used in the prompt. By using a lambda function, we can take the login variable and make it available for the RunnableParallel to use when generating the context for the contributor summary. If we were to pass the login directly without using a lambda, it would not be integrated into the chain properly, and we would not be able to use it as part of the context for generating the summary. The lambda allows us to create a step in the chain that provides the necessary information (the login) for subsequent steps to use when generating the output.
 
 
 # ── Question Generation ────────────────────────────────────────
@@ -164,6 +160,7 @@ Return ONLY a numbered list of 5 questions, no preamble.
 )
 
 
+# TODOs : we're not using question type, so we can remove it. instead we can take specific prompt from user about type of questions they want. 
 def build_question_chain(vector_store, login: str, question_type: str):
     retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 6})
 

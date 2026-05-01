@@ -13,6 +13,7 @@ export default function Home() {
         </p>
         <Link
           href="/login"
+          // here the /(auth) part is skipped because auth is a route group, and we want to link to the login page inside that group
           className="flex items-center gap-2 rounded-lg bg-blue-500 px-6 py-3 text-white hover:bg-blue-400"
         >
           Get Started <ArrowRightIcon className="h-5 w-5" />

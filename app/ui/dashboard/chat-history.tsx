@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import clsx from 'clsx';
 
 
+//TODO : all types like this we're using for our working logic, we should put in definitions.ts
 type ChatHistoryItem={
     id: string;
     repositoryId: string;
@@ -16,7 +17,7 @@ type ChatHistoryItem={
     };
 };
 
-//async is used for server components, so when turning a server component to a client component remove async
+//async(returns promise) is used for server components(they can pause befor rendering final html), so when turning a server component to a client component remove async. Async is allowed inside hooks(like useEffect), not in the client component itself
 export default function ChatHistory({chats}:{chats: ChatHistoryItem[]}){
     const searchParams = useSearchParams();
     const activeChatId = searchParams.get('chatId');
@@ -31,7 +32,7 @@ export default function ChatHistory({chats}:{chats: ChatHistoryItem[]}){
     return (
         <div className="space-y-1">
             {chats.map((chat)=>{
-                const isActive=activeChatId === chat.id;
+                const isActive=activeChatId === chat.id; //condition returns boolean
                 return (
                 <Link 
                 key = {chat.id} 

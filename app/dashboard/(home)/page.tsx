@@ -13,12 +13,14 @@ import RepoEvaluatorSection from '@/app/ui/dashboard/repo-evaluator';
 
 export default async function DashboardPage({
   searchParams,
+  // TODO: we can use the search params to determine if we should show the repo evaluator section or the chat section. If there's a repoId in the search params, we can show the chat section for that repo. If there's no repoId, we can show the repo evaluator section. This way, we can have a single page that handles both the initial repository evaluation and the subsequent chat interactions based on the presence of the repoId in the search params.
 }:{ searchParams?: Promise<{repoId?: string; chatId?: string}>;
 }) {
   const session = await auth();
   const userId = session!.user!.id as string;
   
   return (
+    // You get one main content area per page, not multiple and never nested.
     <main className="flex h-full min-h-0 w-full flex-col">
       
       <h1 className="mb-4 text-xl font-semibold md:text-2xl">
@@ -37,4 +39,3 @@ export default async function DashboardPage({
   );
 }
 
-// i think having separate layouts for enter repo, vs chat with repo will be better

@@ -32,9 +32,11 @@ model Repository {
   description        String?
   language           String?
   lastCommitSha      String?
-  //should be last ingested sha for clarity
-  repoFaissUri       String?
-  //where embedding is stored?
+  //last ingested commit sha - updated every time /ingest runs successfully
+  repoSummary        String?
+  //latest generated repo summary text; older summaries are not kept
+  lastSummarySha     String?
+  //commit sha at which repoSummary was last generated
   createdAt          DateTime            @default(now())
   contributors       Contributor[]
   chats              Chat[]
@@ -45,16 +47,19 @@ model Repository {
 // ? because we get that from the api, and we don't know response will come or not
 
 model Contributor {
-  id                 String              @id @default(cuid())
-  repositoryId       String
-  githubLogin        String
-  avatarUrl          String?
-  totalCommits       Int                 @default(0)
-  summary            String?
-  faissUri           String?
-  generatedQuestions GeneratedQuestion[]
-  createdAt          DateTime            @default(now())
-  repository         Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  id                    String              @id @default(cuid())
+  repositoryId          String
+  githubLogin           String
+  avatarUrl             String?
+  totalCommits          Int                 @default(0)
+  summary               String?
+  //latest generated contributor summary text; older summaries are not kept
+  lastSummarySha        String?
+  //commitSha at which summary was last generated
+  generatedQuestions    GeneratedQuestion[]
+  createdAt             DateTime            @default(now())
+  repository            Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  chatContribViewedShas ChatContribViewedSha[]
 
   @@unique([repositoryId, githubLogin])
   @@index([repositoryId])
@@ -65,24 +70,26 @@ model Contributor {
 //CHAT -> REPO -> CONTRIBUTOR, but chat n contributor both are linked to questions...
 
 enum MessageFeature {
-  repo_summary
-  contributors_summary
   generate_questions
   repo_chat
 }
 //can make repo chat a follow up option. questions should also be repo, contributor - 2 types
 
 model Chat {
-  id                 String              @id @default(cuid())
-  userId             String
-  repositoryId       String
-  commitSha          String?
-  // title        String     @default("New Chat"), put repo name w/ owner
-  createdAt          DateTime            @default(now())
-  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  repository         Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
-  messages           Message[]
-  generatedQuestions GeneratedQuestion[]
+  id                    String              @id @default(cuid())
+  userId                String
+  repositoryId          String
+  lastChatSha           String?
+  //sha o the repo at time user last sent a chat message
+  lastViewedSummarySha  String?
+  lastViewedContribSummarySha  String?  // new: one viewed sha for all contributor summaries together
+  //sha at which user last viewed repo summary tab
+  createdAt             DateTime            @default(now())
+  chatContribViewedShas ChatContribViewedSha[]
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repository            Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  messages              Message[]
+  generatedQuestions    GeneratedQuestion[]
   //only here because linked to questions right?
   @@unique([userId, repositoryId])
   @@index([repositoryId])
@@ -91,6 +98,21 @@ model Chat {
 // single user's repos in history if indexed by user no?
 // Makes queries like findMany({ where: { repositoryId } }) faster, but we'd want user's repos i think
 // TODO : generate questions shouldn't be stored i think, they can be in message right since we don't need universal stored summary type stuff? there shouldn't be a generated message table 
+
+
+//Tracks, per (chat, contributor), the contributor.lastSummarySha that was current the last time the user viewed that contributor's summary
+//Enables : contributor.lastSummarySha!==chatContribViewedShas[contributorId]
+model ChatContribViewedSha{
+  chatId         String
+  contributorId  String
+  viewedSha      String
+  updatedAt      DateTime    @updatedAt
+  chat           Chat        @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  contributor    Contributor @relation(fields: [contributorId], references: [id], onDelete: Cascade)
+
+  @@id([chatId, contributorId])
+  @@index([chatId])
+}
 
 enum MessageRole {
   user

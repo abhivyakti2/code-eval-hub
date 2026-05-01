@@ -2,6 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
+/* TODO : are we using this in current logic? it's not number heavy and no input is of type number. remove any code that's not relavant */
 input[type='number'] {
   -moz-appearance: textfield;
   appearance: textfield;
@@ -16,3 +17,8 @@ input[type='number']::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
+
+/* @tailwind → a special Tailwind CSS directive (not normal CSS)
+base → includes Tailwind’s base styles 
+components → includes pre-built component classes
+utilities → includes utility classes : core of tailwind, utility first styling*/

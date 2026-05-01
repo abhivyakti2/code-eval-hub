@@ -1,4 +1,6 @@
 // Loading animation
+
+//TODO : create skeletons for our working logic components, and remove the given skeletons. current dashboard skeleton is not based on our new ui, so that needs to be changed as well. 
 const shimmer =
   'before:absolute before:inset-0 before:-translate-x-full before:animate-[shimmer_2s_infinite] before:bg-gradient-to-r before:from-transparent before:via-white/60 before:to-transparent';
 

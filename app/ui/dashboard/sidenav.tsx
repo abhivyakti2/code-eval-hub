@@ -1,34 +1,37 @@
 import Link from "next/link";
 import NavLinks from "@/app/ui/dashboard/nav-links";
 import { PowerIcon } from "@heroicons/react/24/outline";
-import { redirect } from "next/navigation";
-import { fetchChatHistoryByUser } from '@/app/lib/data';
-import { auth, signOut } from '@/auth';
-import ChatHistory from '@/app/ui/dashboard/chat-history';
+import { fetchChatHistoryByUser } from "@/app/lib/data";
+import { auth, signOut } from "@/auth";
+import ChatHistory from "@/app/ui/dashboard/chat-history";
+
 export default async function SideNav() {
-  const session = await auth();
-  const userId=(session?.user as {id?: string} | undefined)?.id;
+  const session = await auth(); //to show user specific chat history, we need to get the user id from the session, and then fetch the chat history for that user from the database. if there is no session or user id, we can show a message to login to see chat history. but ig dashboard is not accessable without login, so we can assume that there will be a session and user id when this component is rendered. 
+  const userId = (session?.user as { id?: string } | undefined)?.id;
   const chats = userId ? await fetchChatHistoryByUser(userId) : [];
-  // TODO : handle case when user is not logged in, maybe show a message to login to see chat history, and hide the chat history section. currently it will just show empty chat history which can be confusing for users.
-  // TODO : import chat names from db and render here
-  // If you already have a chats array in scope, put this inside the scroll area:
+  // TODO : proper error handling must be added.
+  // TODO : handle case when user is not logged in i.e session info doesn't have userid, maybe show a message to login to see chat history, and hide the chat history section. currently it will just show empty chat history which can be confusing for users.
   return (
     <div className="flex h-full flex-col px-3 py-4 md:px-2">
       <Link
         className="mb-2 flex h-20 items-end justify-start rounded-md bg-blue-600 p-4 md:h-40"
         href="/"
-      ></Link>
+      ></Link> 
+      {/* TODO : REMOVE THE BLUE BOX N PUT LOGO ABOVE */}
       <div className="flex grow min-h-0 flex-row justify-start space-x-2 md:flex-col md:space-x-0 md:space-y-2">
         <NavLinks />
+        {/* TODO : nav links is only showing dashboard anyways, we can just create a normal link component here for it and remove the nav links file. */}
         <div className="hidden min-h-0 w-full flex-1 rounded-md bg-gray-50 md:flex md:flex-col">
           <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
             Chat History
           </div>
-          <div className ='flex-1 overflow-y-auto px-2 pb-2'>
-            {userId? (
-              <ChatHistory chats={chats}/>
-            ):(
-              <p className="px-3 py-2 text-sm text-gray-500">Sign in to view Chat history.</p>
+          <div className="flex-1 overflow-y-auto px-2 pb-2">
+            {userId ? (
+              <ChatHistory chats={chats} />
+            ) : (
+              <p className="px-3 py-2 text-sm text-gray-500">
+                Sign in to view Chat history.
+              </p>
             )}
           </div>
         </div>

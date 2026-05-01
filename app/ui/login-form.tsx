@@ -1,34 +1,40 @@
-'use client';
-import { lusitana } from '@/app/ui/fonts';
+"use client";
+
+import { lusitana } from "@/app/ui/fonts";
 import {
   AtSymbolIcon,
   KeyIcon,
   ExclamationCircleIcon,
-} from '@heroicons/react/24/outline';
-import { ArrowRightIcon } from '@heroicons/react/20/solid';
-import { Button } from './button';
-import { useActionState } from 'react';
-import { authenticate, LoginState } from '@/app/lib/actions';
-import { useSearchParams } from 'next/navigation';
-import Link from 'next/link';
+} from "@heroicons/react/24/outline";
+import { ArrowRightIcon } from "@heroicons/react/20/solid";
+import { Button } from "./button";
+import { useActionState } from "react";
+import { authenticate, LoginState } from "@/app/lib/actions";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 
 export default function LoginForm() {
+
   const searchParams = useSearchParams();
-  const callbackUrl=searchParams.get('callbackUrl') || '/dashboard'; 
-  //where are we setting callbackUrl from? 
-  // we are setting it from the login page when we redirect to it from a protected page. 
-  // for example, if we try to access /dashboard without being authenticated, 
-  // we will be redirected to /login?callbackUrl=/dashboard by NextAuth. 
+  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  // we are setting callbackUrl in the login page url when we redirect to it from a protected page.
+  // for example, if we try to access /dashboard without being authenticated,
+  // we will be redirected to /login?callbackUrl=/dashboard by NextAuth.
   // this way, after we log in, we can redirect the user back to the page they were trying to access.
+
+  const initialState: LoginState = { message: null, errors: {} };
+  // No hydration mismatch issues
+  // The server renders initial state
+  // After submit, React updates via action result
+  // No mismatch because state flow is controlled
   
-  const initialState : LoginState={ message: null, errors:{}};
   const [state, formAction, isPending] = useActionState(
     authenticate,
     initialState,
   );
   //state is the object returned from the authenticate action on login.
-  //isPending is a boolean that indicates whether the form submission is in progress. 
-  //We can use this to disable the submit button while the login request is being processed. i.e show loading state on the button.
+  //isPending is a boolean that indicates whether the form submission is in progress.
+  //TODO : We can use this to disable the submit button while the login request is being processed. i.e show loading state on the button.
 
   return (
     <form action={formAction} className="space-y-3">
@@ -44,6 +50,7 @@ export default function LoginForm() {
             >
               Email
             </label>
+            {/* label is block element, then how is input in the same line? Because it's a peer element i.e it's a sibling element and sibling elements are displayed inline */}
             <div className="relative">
               <input
                 className="peer block w-full rounded-md border border-gray-200 py-[9px] pl-10 text-sm outline-2 placeholder:text-gray-500"
@@ -54,14 +61,16 @@ export default function LoginForm() {
                 required
                 aria-describedby="email-error"
               />
+              {/* aria-describedby links the error message to the input field */}
               <AtSymbolIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-gray-500 peer-focus:text-gray-900" />
             </div>
             <div id="email-error" aria-live="polite" aria-atomic="true">
-              {state?.errors?.email && (
-            state.errors.email.map((error: string)=>(<p className="text-sm text-red-500" key={error}>
-              {error}
-            </p>))
-          )}
+              {state?.errors?.email &&
+                state.errors.email.map((error: string) => (
+                  <p className="text-sm text-red-500" key={error}>
+                    {error}
+                  </p>
+                ))}
             </div>
           </div>
           <div className="mt-4">
@@ -85,14 +94,16 @@ export default function LoginForm() {
               <KeyIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-gray-500 peer-focus:text-gray-900" />
             </div>
             <div id="password-error" aria-live="polite" aria-atomic="true">
-              {state?.errors?.password && (
-            state.errors.password.map((error: string)=>(<p className="text-sm text-red-500" key={error}>
-              {error}
-            </p>))
-          )}
+              {state?.errors?.password &&
+                state.errors.password.map((error: string) => (
+                  <p className="text-sm text-red-500" key={error}>
+                    {error}
+                  </p>
+                ))}
             </div>
           </div>
         </div>
+
         <input type="hidden" name="redirectTo" value={callbackUrl} />
         {/* sent as part of the form data to the authenticate action, 
         so that after successful login, we can redirect the user to the callbackUrl. */}
@@ -100,14 +111,16 @@ export default function LoginForm() {
         <Button className="mt-4 w-full">
           Log in <ArrowRightIcon className="ml-auto h-5 w-5 text-gray-50" />
         </Button>
-        {/* TODO : Use aria-describedby to associate the error message with the correct input field */}
-          {state?.message && (
-            <div className="flex h-8 items-end space-x-1">
-              <ExclamationCircleIcon className="h-5 w-5 text-red-500" />
-              <p className="text-sm text-red-500">{state.message}</p>
-            </div>
-          )}
-          
+        {/*How is this Button linked to form's submission? If you don’t specify a type, then by default:
+        A <button> inside a <form> behaves as type="submit"*/}
+        {/* TODO : aria-describedby is used to associate the error messages with the correct input field, here message in state isn' linked to a specific input field, what does it contain? */}
+        {state?.message && (
+          <div className="flex h-8 items-end space-x-1">
+            <ExclamationCircleIcon className="h-5 w-5 text-red-500" />
+            <p className="text-sm text-red-500">{state.message}</p>
+          </div>
+        )}
+
         <div className="mt-4 text-center text-sm">
           <p className="text-gray-600">
             Don't have an account?{" "}
@@ -117,9 +130,17 @@ export default function LoginForm() {
             >
               Sign up
             </Link>
+            {/* Link is an inline element */}
           </p>
         </div>
       </div>
     </form>
   );
 }
+
+
+
+//useActionState : Not great for:
+// Real-time validation (onChange)
+// Highly interactive forms (live typing feedback)
+// Complex multi-step client-heavy flows

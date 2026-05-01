@@ -13,10 +13,14 @@ import Link from "next/link";
 
 export default function SignUpForm() {
   const initialState: SignUpState = { message: null, errors: {} };
-  //w can name the state whatever we want, it is just a variable. formAction is the function we will call on form submit, and isPending is a boolean that indicates if the action is currently being executed.
+
+  //we can name the state whatever we want, it is just a variable. formAction is the function we will call on form submit, and isPending is a boolean that indicates if the action is currently being executed.
   const [state, formAction, isPending] = useActionState(register, initialState);
-  //what does useActionState do? It is a custom hook that manages the state of an action, including the loading state and any errors or messages returned by the action. It takes an action function and an initial state as arguments, and returns the current state, a function to execute the action, and a boolean indicating if the action is currently being executed.
-  // if action is successful, redirect happens right? state is useful when errors need to be displayed 
+  //what does useActionState do? It is a custom hook that manages the state of an action, including the loading state and any errors or messages returned by the action. It takes an action function and an initial state as arguments, 
+  // and returns the current state, a function to execute the action, and a boolean indicating if the action is currently being executed.
+  // state is returned from the server action, and it can contain any data that we want to send back to the client, such as error messages or success messages. We can use this state to display feedback to the user based on the result of the action.
+  // if action is successful, redirect happens right? state is useful when errors need to be displayed
+  // isPending keeps updating automatically based on the state of the action, so we can use it to disable the submit button and show a loading state while the action is being executed.
 
   return (
     <form action={formAction} className="space-y-3">
@@ -134,7 +138,8 @@ export default function SignUpForm() {
             <p className="text-sm text-red-500">{state.message}</p>
           </div>
         )}
-        {/* shows error messages apart from the field-specific ones, eg DB or login error. */}
+        {/* shows error messages apart from the field-specific ones, eg DB or login error. 
+        TODO : track which errors are being sent in message */}
 
         <div className="mt-4 text-center text-sm">
           <p className="text-gray-600">
