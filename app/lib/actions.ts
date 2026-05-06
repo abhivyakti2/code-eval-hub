@@ -21,10 +21,11 @@ import {
   fetchContributors,
   fetchLatestCommitSha,
 } from "@/app/lib/github";
+import { fetchRepoOwnerName, fetchRepoLastCommitSha } from "@/app/lib/data";
 import bcrypt from "bcrypt";
 import { AuthError } from "next-auth";
 import { MessageFeature } from "@prisma/client";
-import { SignUpState, LoginState, ValidateRepoUrlState, AddRepoState } from "./definitions";
+import { SignUpState, LoginState, AddRepoState } from "./definitions";
 import { triggerRepoIngestion, generateQuestions, generateRepoSummary, generateContributorSummary, askRepoChat } from "./rag-client";
 //is it needed to import MessageFeature type here? yes, because we are using it in the sendChatMessageWithFeatures function to type the features of a message. It helps ensure that we are only using valid features that are defined in our Prisma schema, and it provides better type safety and autocompletion in our code editor when working with message features. and since we're just using type not data, security is not a concern here.
 // don’t use import type for Prisma enums because they are real runtime values, not just types.
@@ -162,7 +163,13 @@ return {}; // unreachable — NextAuth redirects
 
 // TODO : this isn't a server action, move non server actions to separate file and import to use in server action. or move down to this file's end.
 export async function logout() {
-  await signOut({ redirectTo: "/login" }); // signOut throws a redirect internally and does not need a try/catch. 
+  try {
+    await signOut({ redirectTo: "/login" }); // signOut throws a redirect internally.
+  } catch (error) {
+    console.error("logout: signOut failed", error);
+    // Ensure we still redirect to login instead of returning a 500 to the client
+    redirect("/login");
+  }
 }
 
 const GithubUrlSchema = z
@@ -178,15 +185,6 @@ const GithubUrlSchema = z
 // [^/]+ : matches one or more characters that are not a slash, representing the repository name
 // we can also allow for optional .git at the end, and optional trailing slash, by adding (?:\.git)?(?:\/|$) at the end of the regex.
 
-
-// Fast, client-callable: checks format only
-export function validateGithubUrlFormat(raw: string): ValidateRepoUrlState {
-  const parsed = GithubUrlSchema.safeParse(raw.trim());
-  if (!parsed.success)
-    return { valid: false, error: parsed.error.errors[0].message };
-  const { owner, repo } = parseGithubUrl(parsed.data);
-  return { valid: true, owner, repo, normalizedURL: `https://github.com/${owner}/${repo}` };
-}
 
 // Slower, server-side: also verifies the repo exists on GitHub
 export async function validateGithubRepoExists(
@@ -355,9 +353,10 @@ export async function sendChatMessageWithFeatures(params: {
     throw new Error("Please enter a message for repo chat.");
   }
 
-  const priorUserMsgCount = await prisma.message.count({
-    where: { chatId, role: "user" },
-  });
+  try {
+    const priorUserMsgCount = await prisma.message.count({
+      where: { chatId, role: "user" },
+    });
 
   // TODO : can we trigger ingestion when sending message? check if repo is ingested or not, if not, trigger it and then send message, so that user doesn't have to wait for ingestion to complete and then send message again. but if we trigger ingestion here, we need to make sure that the message is sent only after ingestion is complete, because otherwise the chat response might not be accurate if the repo data is not yet available for the RAG service. So we can trigger ingestion here if needed, and then wait for it to complete before proceeding to send the message and get the chat response.
   // TODO : like check latestsha while sending each message, and if not present, also check ingestion, and if not up to date show on ui option to chat with latest sha, then ingest again. and otherwise on first message, ingest latest sha if not already most recent ingestion.
@@ -376,24 +375,16 @@ export async function sendChatMessageWithFeatures(params: {
     },
   });
 
-  const repoForSha = await prisma.repository.findUnique({
-    where: { id: repoId },
-    select: { lastCommitSha: true },
-  });
-  if (repoForSha?.lastCommitSha) {
+  const lastCommitSha = await fetchRepoLastCommitSha(repoId);
+  if (lastCommitSha) {
     await prisma.chat.update({
       where: { id: chatId },
-      data: { lastChatSha: repoForSha.lastCommitSha },
+      data: { lastChatSha: lastCommitSha },
     });
   }
   // TODO : SHOW UI NOTIFICATION LIKE DATE ETC ABOUT REPO WAS UPDATED AT THIS POINT
 
-  const repo = await prisma.repository.findUnique({
-    where: { id: repoId },
-    select: { owner: true, name: true },
-  });
-
-  if (!repo) throw new Error("Repository not found.");
+  const repo = await fetchRepoOwnerName(repoId);
 
   // TODO : since we can remove adding contributors at add repo time, we should check if contributors are present in db or not, if not then fetch from github and add to db, and then fetch from db to generate questions, so that we can ensure that we have the latest contributor data in our database before generating questions based on it. This way, if there have been new contributors or changes in contributions since the repo was added, we can reflect that in the generated questions without having to wait for a separate process to add contributors to the database.
   // TODO : although since project main aim is to show contributor specific summaries, and give specific questions for contibutors, i guess we can do it early
@@ -410,12 +401,18 @@ export async function sendChatMessageWithFeatures(params: {
     if (contributors.length === 0) {
       blocks.push("[Evaluation Questions]\nNo contributors found.");
     } else {
-      // In actions.ts — replace the per-contributor loop
-const questionsByContrib = await generateQuestionsForAllContributors( //TODO : create function n call batch-contributor-questions endpoint
-  repoId,
-  contributors.map((c) => ({ id: c.id, login: c.githubLogin })),
-  chatId,
-);
+      const questionsByContrib = await Promise.all(
+        contributors.map(async (c) => {
+          const questions = await generateQuestions(
+            repoId,
+            c.id,
+            c.githubLogin,
+            chatId,
+            "contributor",
+          );
+          return `@${c.githubLogin}\n- ${questions.join("\n- ")}`;
+        }),
+      );
       blocks.push(
         `[Evaluation Questions]\n${questionsByContrib.join("\n\n")}`,
       );
@@ -431,20 +428,33 @@ const questionsByContrib = await generateQuestionsForAllContributors( //TODO : c
   }
   // TODO : error handling for responses from RAG needed?
 
-  const combined = blocks.join("\n\n---------------------------\n\n");
-  await prisma.message.create({
-    data: {
-      chatId,
-      role: "assistant",
-      content: combined,
-      features,
-    },
-  });
-  //TODO : error handling for db write?
+    const combined = blocks.join("\n\n---------------------------\n\n");
+    await prisma.message.create({
+      data: {
+        chatId,
+        role: "assistant",
+        content: combined,
+        features,
+      },
+    });
+    //TODO : error handling for db write?
 
-  revalidateTag(`repo-${repoId}`, "max");
-  revalidatePath("/dashboard");
-  return combined;
+    revalidateTag(`repo-${repoId}`, "max");
+    revalidatePath("/dashboard");
+    return combined;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("sendChatMessageWithFeatures failed:", message);
+
+    if (
+      message.includes("Can't reach database server") ||
+      message.includes("PrismaClientInitializationError")
+    ) {
+      throw new Error("Database is temporarily unavailable. Please try again in a moment.");
+    }
+
+    throw new Error("Failed to send message. Please try again.");
+  }
   //WE SHOW RESPONSE IN UI THROUGH THE RETURNED DATA. WHEN OPENING OLDER CHAT WE FETCH MESSAGES FROM DB, SO THE ASSISTANT MESSAGE WITH COMBINED RESPONSE WILL BE SHOWN IN UI. WHEN SENDING NEW MESSAGE, THE NEW ASSISTANT MESSAGE WITH COMBINED RESPONSE WILL BE APPENDED TO CHAT IN UI.
 }
 
@@ -538,6 +548,14 @@ export async function fetchCurrentGithubSha(
 ): Promise<string> {
   return fetchLatestCommitSha(owner, repoName);
   // TODO : do we need this function? or can we directly use fetchLatestCommitSha wherever we need to check the latest sha? we can remove this function if it's not adding any additional logic or abstraction, and just use fetchLatestCommitSha directly in our codebase to get the latest commit SHA when needed.
+}
+
+export async function triggerRepoIngestionAction(repoId: string): Promise<void> {
+  await triggerRepoIngestion(repoId);
+}
+
+export async function generateRepoSummaryAction(repoId: string): Promise<string> {
+  return generateRepoSummary(repoId);
 }
 
 //we can do it in same function which has steps to check the shas differ

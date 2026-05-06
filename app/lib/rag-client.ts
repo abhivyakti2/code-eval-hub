@@ -1,5 +1,7 @@
 import { revalidateTag, revalidatePath } from "next/cache";
 import { prisma } from "./db";
+import { fetchRepoOwnerName } from "./data";
+import { randomUUID } from "crypto";
 
 const RAG_URL = process.env.RAG_SERVICE_URL ?? "http://localhost:8000";
 
@@ -97,7 +99,7 @@ export async function generateRepoSummary(repoId: string): Promise<string> {
 
   const repo = await prisma.repository.findUnique({
     where: { id: repoId },
-    select: { owner: true, name: true },
+    select: { owner: true, name: true, lastCommitSha: true },
   });
 
   if (!repo) {
@@ -112,6 +114,7 @@ export async function generateRepoSummary(repoId: string): Promise<string> {
         repo_id: repoId,
         owner: repo.owner,
         repo_name: repo.name,
+        current_sha: repo.lastCommitSha ?? "",
       }),
       // why send owner name n reponame? maybe rag service needs it for repo api, and we're not sharing db to rag, it only has bucket
     });
@@ -147,8 +150,8 @@ export async function generateContributorSummary(
   repoId: string,
   contributorLogin: string,
 ): Promise<string> {
-  const { owner, name } = await getRepoOwnerName(repoId); // TODO : can't we send owner n name from caller itself since we are already fetching it in generate and store function, instead of fetching it again here? we can modify the generateAndStoreContribSummary function to fetch the owner and name, and then pass them as parameters to this function to avoid redundant database queries and improve performance.
-  
+  const { owner, name } = await fetchRepoOwnerName(repoId);
+
   const res = await fetch(`${RAG_URL}/contributor-summary`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -194,7 +197,7 @@ export async function generateQuestions(
   questionType = "general",
   // TODO : what is questiontype? we're using features, so we can remove questiontype from db
 ): Promise<string[]> {
-  const { owner, name } = await getRepoOwnerName(repoId); // TODO : again here, we can pass owner and name from caller function to avoid redundant db query, since we already have that info in generateAndStoreContribSummary function. we can modify the generateAndStoreContribSummary function to fetch the owner and name, and then pass them as parameters to this function to improve performance by reducing unnecessary database queries.
+  const { owner, name } = await fetchRepoOwnerName(repoId);
 
   const res = await fetch(`${RAG_URL}/generate-questions`, {
     method: "POST",
@@ -204,7 +207,8 @@ export async function generateQuestions(
       owner,
       repo_name: name,
       contributor_login: contributorLogin,
-      question_type: questionType, 
+      question_type: questionType,
+      variation_seed: randomUUID(),
     }), //TODO : latest version should be used. if not up to date,
     // repo ingestion should happen again.
   });
@@ -227,22 +231,6 @@ export async function generateQuestions(
   });
 // TODO : error handling for db write? because if it fails, we should handle that gracefully and maybe log the error, but we might still want to return the generated questions even if we fail to store them in the database, depending on how critical it is to have the questions stored. We can catch any errors thrown by the prisma.generatedQuestion.create call and decide how to handle them based on our application's needs.
   return data.questions as string[];
-}
-
-// TODO : why are we using it? when repo already is in db? in that case while checking if repo exists in db, can't we fetch this info there only?
-async function getRepoOwnerName(
-  repoId: string,
-): Promise<{ owner: string; name: string }> {
-  const repo = await prisma.repository.findUnique({
-    where: { id: repoId },
-    select: { owner: true, name: true },
-  });
-
-  if (!repo) {
-    throw new Error("Repository not found.");
-  }
-
-  return repo;
 }
 
 //change - not like simple questions, specific requests, summarize, or question generation etc

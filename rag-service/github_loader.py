@@ -6,6 +6,7 @@ document chunks at the source level.
 """
 
 import httpx
+import asyncio
 # httpx is an HTTP client library for Python that allows us to make HTTP requests to the GitHub API to fetch repository data, such as file metadata, file contents, and commit information. We use httpx to interact with the GitHub API endpoints and retrieve the necessary data for building our repository text and contributor-specific text.
 import base64
 # base64 is a module in Python that provides functions for encoding and decoding data using the Base64 encoding scheme. In this code, we use base64 to decode the content of files fetched from the GitHub API, which are often returned in Base64-encoded format. By decoding the content, we can obtain the original text of the files, which can then be used to build our repository text and contributor-specific text for further processing and analysis.
@@ -81,6 +82,19 @@ def fetch_file_content(owner: str, repo: str, path: str) -> str:
     return data.get("content", "")
 
 
+async def _fetch_file_content_async(
+    client: httpx.AsyncClient, owner: str, repo: str, path: str
+) -> str:
+    url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
+    r = await client.get(url, headers=HEADERS, timeout=30)
+    if r.status_code != 200:
+        return ""
+    data = r.json()
+    if data.get("encoding") == "base64":
+        return base64.b64decode(data["content"]).decode("utf-8", errors="replace")
+    return data.get("content", "")
+
+
 def fetch_commits_by_contributor(
     owner: str, repo: str, login: str, since: str | None = None
 ) -> list[dict]:          # Todo : is since being passed correctly? and for initial repo ingest it's all commits right?
@@ -114,12 +128,19 @@ def build_repo_text(owner: str, repo: str) -> str:
     Each file is prefixed with its path so the LLM understands context.
     """
     files = fetch_file_tree(owner, repo)
-    parts = []
-    for f in files:
-        content = fetch_file_content(owner, repo, f["path"])
-        if content.strip():
-            parts.append(f"### FILE: {f['path']}\n\n{content}\n")
-    return "\n\n".join(parts)
+    async def _build():
+        parts: list[str] = []
+        async with httpx.AsyncClient() as client:
+            tasks = [
+                _fetch_file_content_async(client, owner, repo, f["path"]) for f in files
+            ]
+            results = await asyncio.gather(*tasks)
+            for f, content in zip(files, results):
+                if content and content.strip():
+                    parts.append(f"### FILE: {f['path']}\n\n{content}\n")
+        return "\n\n".join(parts)
+
+    return asyncio.run(_build())
 # "text" refers to the concatenated content of all the source files in the GitHub repository, with each file's content prefixed by its path for context. This text is not an embedding or a summary, but rather the raw content of the files as they are fetched and combined into a single string. This combined text can then be used as input for further processing, such as generating embeddings for similarity search or providing context for language models when answering questions about the repository.
 
 
@@ -129,7 +150,6 @@ def build_contributor_text(owner: str, repo: str, login: str, since: str | None 
     Build contributor-specific text from their commit diffs.
     Each commit is prefixed with its message and date for context."""
     commits = fetch_commits_by_contributor(owner, repo, login)
-#   TODOs : should get for all commits after since right? we should past last sha of repo so we can get commits after that, and if repo not already ingested before, then fetch all commits
     lines = [f"Contributor: {login}", f"Total commits: {len(commits)}", ""]
     for commit in commits:
         msg = commit.get("commit", {}).get("message", "")

@@ -5,11 +5,13 @@ import { useEffect, useRef } from "react";
 const IDLE_MS = 30 * 60 * 1000;
 
 export function InactivityGuard() {
-  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   //TODO : provide initial value to timer ref to avoid potential undefined issues, or add a check before clearing timeout in reset function.
 
   const reset = () => {
-    clearTimeout(timer.current);
+    if (timer.current) {
+      clearTimeout(timer.current);
+    }
     timer.current = setTimeout(() => signOut({ callbackUrl: "/login" }), IDLE_MS);
   };
 
@@ -19,7 +21,9 @@ export function InactivityGuard() {
     );
     reset();
     return () => {
-      clearTimeout(timer.current);
+      if (timer.current) {
+        clearTimeout(timer.current);
+      }
       ["mousemove", "keydown", "click", "touchstart"].forEach((e) =>
         window.removeEventListener(e, reset),
       );

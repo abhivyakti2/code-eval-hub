@@ -22,12 +22,12 @@ export default async function DashboardPage({
   
   return (
     // You get one main content area per page, not multiple and never nested.
-    <main className="flex h-full min-h-0 w-full flex-col">
+    <main className="flex h-full min-h-0 w-full flex-col text-slate-100">
       
       <h1 className="mb-4 text-xl font-semibold md:text-2xl">
         Welcome back, {session?.user?.email?.split('@')[0] ?? 'User'} 👋
       </h1>
-      <p className="mb-6 text-gray-600">
+      <p className="mb-6 max-w-2xl text-slate-300">
         Enter a GitHub repository URL below to start analysing and chatting with the codebase.
       </p>
       

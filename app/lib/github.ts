@@ -1,9 +1,10 @@
-const GITHUB_API='https://api.github.com'; 
+
+const GITHUB_API = "https://api.github.com";
 
 const headers = {
-    Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-    Accept:'application/vnd.github+json',
-    'X-Github_Api_Version':'2022-11-28',
+  Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+  Accept: "application/vnd.github+json",
+  "X-GitHub-Api-Version": "2022-11-28",
 };
 
 // TODO : add error handling n caching in this file too.
@@ -18,7 +19,12 @@ export function parseGithubUrl(url: string) : {owner: string; repo: string}{
 
 //TODO : we can also add some caching mechanism here to avoid hitting github api rate limit, but for now we can just keep it simple and fetch data directly from github api.
 export async function fetchRepoMetadata(owner: string, repo: string) {
-  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, { headers });
+  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, {
+    headers,
+    // short cache — metadata may change but not every second
+    next: { revalidate: 60 },
+  });
+
   if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
   return res.json();
 }
@@ -26,8 +32,8 @@ export async function fetchRepoMetadata(owner: string, repo: string) {
 export async function fetchContributors(owner: string, repo: string) {
   const res = await fetch(
     `${GITHUB_API}/repos/${owner}/${repo}/contributors?per_page=30`,
-    { headers }
-  ); 
+    { headers, next: { revalidate: 30 } },
+  );
   // The 'per_page=30' query parameter is used to specify that we want to retrieve a maximum of 30 contributors in the response.
   // TODO : what about rest? well for small hackathon etc projects 30 is fine enough. infact more than enough. can we ask for most active 30 contributors? well github api doesn't provide that directly, we can just sort the returned ones.
   if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
@@ -53,10 +59,10 @@ export async function fetchCommitsByContributor(owner: string, repo: string, log
 
 // TODO : we check this a lot of imes so the function is needed. similarly anything repeated in multiple places should be made into a separate function to avoid code duplication and improve maintainability.
 export async function fetchLatestCommitSha(owner: string, repo: string): Promise<string> {
-  const res = await fetch(
-    `${GITHUB_API}/repos/${owner}/${repo}/commits/HEAD`,
-    { headers }
-  );
+  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/commits/HEAD`, {
+    headers,
+    next: { revalidate: 30 },
+  });
   if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
   const data = await res.json(); 
   // .json does what? It parses the response body as JSON and returns a JavaScript object. 

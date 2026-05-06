@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-slate-950 text-slate-100;
+  }
+}
+
 /* TODO : are we using this in current logic? it's not number heavy and no input is of type number. remove any code that's not relavant */
 input[type='number'] {
   -moz-appearance: textfield;
@@ -17,7 +27,19 @@ input[type='number']::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
+/* Animation for generating indicator pulsing effect */
+@keyframes pulse-fade {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
 
+.animate-pulse-fade {
+  animation: pulse-fade 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
 /* @tailwind → a special Tailwind CSS directive (not normal CSS)
 base → includes Tailwind’s base styles 
 components → includes pre-built component classes

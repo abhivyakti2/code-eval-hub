@@ -121,3 +121,35 @@ export async function fetchChatWithRepoAndContribs(chatId: string) {
     throw new Error("Failed to fetch chat context.");
   }
 }
+
+export async function fetchRepoOwnerName(
+  repoId: string,
+): Promise<{ owner: string; name: string }> {
+  try {
+    const repo = await prisma.repository.findUnique({
+      where: { id: repoId },
+      select: { owner: true, name: true },
+    });
+
+    if (!repo) throw new Error("Repository not found.");
+    return repo;
+  } catch (err) {
+    console.error("DB Error:", err);
+    throw new Error("Failed to fetch repository owner/name.");
+  }
+}
+
+export async function fetchRepoLastCommitSha(
+  repoId: string,
+): Promise<string | null> {
+  try {
+    const repo = await prisma.repository.findUnique({
+      where: { id: repoId },
+      select: { lastCommitSha: true },
+    });
+    return repo?.lastCommitSha ?? null;
+  } catch (err) {
+    console.error("DB Error:", err);
+    throw new Error("Failed to fetch repository last commit SHA.");
+  }
+}

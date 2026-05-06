@@ -147,3 +147,51 @@ def update_vector_store(new_text: str, repo_id: str, scope: str = "repo") -> FAI
         updated.save_local(str(path))
         upload_dir(str(path), bucket=VECTOR_STORE_BUCKET, key=object_key)
     return updated
+
+
+# --- In-process cache wrappers (override previous implementations) ---
+# Simple per-process cache mapping cache_key -> FAISS instance.
+_vs_cache: dict[str, FAISS] = {}
+
+def _cache_key(repo_id: str, scope: str) -> str:
+    safe_scope = scope if scope == "repo" else _sanitize_scope(scope)
+    return f"{repo_id}:{safe_scope}"
+
+
+# Preserve originals
+_orig_create = create_vector_store
+_orig_load = load_vector_store
+_orig_get_or_create = get_or_create_vector_store
+
+
+def create_vector_store(text: str, repo_id: str, scope: str = "repo") -> FAISS:
+    vs = _orig_create(text, repo_id, scope)
+    try:
+        _vs_cache[_cache_key(repo_id, scope)] = vs
+    except Exception:
+        pass
+    return vs
+
+
+def load_vector_store(repo_id: str, scope: str = "repo") -> Optional[FAISS]:
+    ck = _cache_key(repo_id, scope)
+    if ck in _vs_cache:
+        return _vs_cache[ck]
+    vs = _orig_load(repo_id, scope)
+    if vs is not None:
+        try:
+            _vs_cache[ck] = vs
+        except Exception:
+            pass
+    return vs
+
+
+def get_or_create_vector_store(text: str, repo_id: str, scope: str = "repo") -> FAISS:
+    vs = load_vector_store(repo_id, scope)
+    if vs is not None:
+        return vs
+    return create_vector_store(text, repo_id, scope)
+
+
+def invalidate_cache(repo_id: str, scope: str = "repo") -> None:
+    _vs_cache.pop(_cache_key(repo_id, scope), None)

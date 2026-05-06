@@ -17,7 +17,7 @@ async function getUser(email: string) {
 }
 
 
-export const { auth, signIn, signOut } = NextAuth({
+export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   callbacks: { 
     //not arbitrary, these are the only callbacks next auth recognizes.
@@ -64,16 +64,11 @@ export const { auth, signIn, signOut } = NextAuth({
           if (parsedCredentials.success) {
           const { email, password } = parsedCredentials.data;
           const user = await getUser(email);
-          if (!user) {
-            throw new Error("No user found with that email."); // surfaces as CredentialsSignin
-          }
+          if (!user) return null;
           //can also return just null if we don't want to specify error message, and it will still surface as CredentialsSignin error on the client side, but by throwing an error with a specific message, we can provide more context about why the sign-in failed, which can be helpful for debugging and improving the user experience on the client side. When we throw an error in the authorize function, NextAuth will catch that error and pass the message to the client side, where we can display it to the user to inform them about the reason for the failed sign-in attempt.
           
           const passwordsMatch = await bcrypt.compare(password, user.password);
-          if (!passwordsMatch) {
-            throw new Error("Incorrect password."); // surfaces as CredentialsSignin
-          }
-          return user; // but user also contains password, is it marked as private? no, it's not marked as private, but next auth will only return the properties of the user object that are not marked as private in the session object that is sent to the client side. so it will be sent to client side in session object? no, it won't be sent to the client side in the session object because we are not adding it to the session object in the session callback. we are only adding the user id to the session object, so only the user id will be available on the client side when we call getSession() or useSession() hooks from next-auth/react. the password will not be available on the client side, but it will be available in the authorize function for us to compare with the hashed password in the database.
+          if (passwordsMatch) return user; // but user also contains password, is it marked as private? no, it's not marked as private, but next auth will only return the properties of the user object that are not marked as private in the session object that is sent to the client side. so it will be sent to client side in session object? no, it won't be sent to the client side in the session object because we are not adding it to the session object in the session callback. we are only adding the user id to the session object, so only the user id will be available on the client side when we call getSession() or useSession() hooks from next-auth/react. the password will not be available on the client side, but it will be available in the authorize function for us to compare with the hashed password in the database.
         }
         return null; 
     }}),

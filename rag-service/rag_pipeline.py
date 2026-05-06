@@ -20,6 +20,13 @@ llm = ChatGroq(
     temperature=0.2,
 )   # The llm variable is an instance of the ChatGroq class, which is configured to use the Groq API with the specified API key, model name, and temperature. This instance will be used to send prompts to the language model and receive responses based on the defined chains in the code.
 
+# Keep chat/summary conservative, but allow more diversity for generated interview questions.
+question_llm = ChatGroq(
+    groq_api_key=GROQ_API_KEY,
+    model_name="llama-3.3-70b-versatile",
+    temperature=0.85,
+)
+
 
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
@@ -146,6 +153,8 @@ Commit diffs:
 
 Generate 5 specific, thoughtful evaluation questions about this contributor's actual work.
 Vary difficulty: 2 easy, 2 medium, 1 hard.
+Ensure each generation has varied wording and focus areas (architecture, correctness, testing, trade-offs, maintainability).
+If a variation seed is provided in the prompt hints, use it only to diversify output; never print the seed.
 Return ONLY a numbered list. No preamble.
 """,
     input_variables=["context", "login", "custom_prompt"],
@@ -165,7 +174,7 @@ def build_question_chain(vector_store, login: str, custom_prompt: str = ""):
         })
         | RunnableLambda(lambda d: {**d, "custom_prompt": custom_prompt or "Focus on design decisions and code quality."})
         | QUESTION_PROMPT
-        | llm
+        | question_llm
         | StrOutputParser()
     )
 #  why return function here unlike other chains where we return a Runnable chain? In this case, we are defining a function invoke_chain that encapsulates the entire process of retrieving relevant documents, formatting them, generating a prompt, and invoking the language model to get the final output. By returning this function, we allow the caller to execute the entire question generation process by simply calling the returned function with the appropriate input. This is different from the other chains where we return a Runnable chain that can be executed in a more modular way. Here, we are directly returning a function that performs all the necessary steps in one go when invoked.

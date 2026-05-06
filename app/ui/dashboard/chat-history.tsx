@@ -11,7 +11,7 @@ export default function ChatHistory({chats}:{chats: ChatHistoryItem[]}){
     const activeChatId = searchParams.get('chatId');
     if(chats.length === 0){
         return (
-            <p className="px-3 py-2 text-sm text-gray-500">
+            <p className="px-3 py-2 text-sm text-slate-400">
                 No chats yet. Start one from Dashboard.
             </p>
         );
@@ -26,12 +26,12 @@ export default function ChatHistory({chats}:{chats: ChatHistoryItem[]}){
                 key = {chat.id} 
                 href={`/dashboard/chat?repoId=${chat.repositoryId}&chatId=${chat.id}&github_url=${encodeURIComponent(chat.repository.githubUrl)}&repo_name=${encodeURIComponent(chat.repository.name)}`}
                 className={clsx(
-              'block rounded-md px-3 py-2 text-sm hover:bg-sky-100 hover:text-blue-600',
-              isActive ? 'bg-sky-100 text-blue-600' : 'text-gray-700'
+              'block rounded-md px-3 py-2 text-sm transition-colors hover:bg-slate-800 hover:text-cyan-300',
+              isActive ? 'bg-slate-800 text-cyan-300' : 'text-slate-200'
             )}
                 >
                     <div className="truncate text-sm font-medium">{chat.repository.name}</div>
-                    <div className="text-xs text-gray-500">{chat._count.messages} messages</div>
+                    <div className="text-xs text-slate-400">{chat._count.messages} messages</div>
                 </Link>)
             })}
         </div>

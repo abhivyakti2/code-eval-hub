@@ -40,14 +40,14 @@ export default function LoginForm() {
 
   return (
     <form action={formAction} className="space-y-3">
-      <div className="flex-1 rounded-lg bg-gray-50 px-6 pb-4 pt-8">
-        <h1 className={`${lusitana.className} mb-3 text-2xl`}>
+      <div className="flex-1 rounded-lg border border-slate-800 bg-slate-900/80 px-6 pb-4 pt-8 shadow-sm shadow-slate-950/30">
+        <h1 className={`${lusitana.className} mb-3 text-2xl text-slate-100`}>
           Please log in to continue.
         </h1>
         <div className="w-full">
           <div>
             <label
-              className="mb-3 mt-5 block text-xs font-medium text-gray-900"
+              className="mb-3 mt-5 block text-xs font-medium text-slate-200"
               htmlFor="email"
             >
               Email
@@ -55,7 +55,7 @@ export default function LoginForm() {
             {/* label is block element, then how is input in the same line? Because it's a peer element i.e it's a sibling element and sibling elements are displayed inline */}
             <div className="relative">
               <input
-                className="peer block w-full rounded-md border border-gray-200 py-[9px] pl-10 text-sm outline-2 placeholder:text-gray-500"
+                className="peer block w-full rounded-md border border-slate-700 bg-slate-950/70 py-[9px] pl-10 text-sm text-slate-100 outline-2 placeholder:text-slate-500"
                 id="email"
                 type="email"
                 name="email"
@@ -64,7 +64,7 @@ export default function LoginForm() {
                 aria-describedby="email-error"
               />
               {/* aria-describedby links the error message to the input field */}
-              <AtSymbolIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-gray-500 peer-focus:text-gray-900" />
+              <AtSymbolIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-500 peer-focus:text-cyan-300" />
             </div>
             <div id="email-error" aria-live="polite" aria-atomic="true">
               {state?.errors?.email &&
@@ -77,14 +77,14 @@ export default function LoginForm() {
           </div>
           <div className="mt-4">
             <label
-              className="mb-3 mt-5 block text-xs font-medium text-gray-900"
+              className="mb-3 mt-5 block text-xs font-medium text-slate-200"
               htmlFor="password"
             >
               Password
             </label>
             <div className="relative">
               <input
-                className="peer block w-full rounded-md border border-gray-200 py-[9px] pl-10 text-sm outline-2 placeholder:text-gray-500"
+                className="peer block w-full rounded-md border border-slate-700 bg-slate-950/70 py-[9px] pl-10 text-sm text-slate-100 outline-2 placeholder:text-slate-500"
                 id="password"
                 type="password"
                 name="password"
@@ -93,7 +93,7 @@ export default function LoginForm() {
                 minLength={6}
                 aria-describedby="password-error"
               />
-              <KeyIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-gray-500 peer-focus:text-gray-900" />
+              <KeyIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-500 peer-focus:text-cyan-300" />
             </div>
             <div id="password-error" aria-live="polite" aria-atomic="true">
               {state?.errors?.password &&
@@ -113,7 +113,7 @@ export default function LoginForm() {
         <Button className="mt-4 w-full" disabled={isPending}>
           {isPending ? "Logging in..." : "Log in"}
           {!isPending && (
-            <ArrowRightIcon className="ml-auto h-5 w-5 text-gray-50" />
+            <ArrowRightIcon className="ml-auto h-5 w-5 text-slate-50" />
           )}{" "}
         </Button>
         {/*How is this Button linked to form's submission? If you don’t specify a type, then by default:
@@ -126,16 +126,16 @@ export default function LoginForm() {
           </div>
         )}
         {error === "account_created_login_failed" && (
-          <p className="text-amber-600 text-sm">
+          <p className="text-sm text-amber-300">
             Account created! Please log in.
           </p>
         )}
         <div className="mt-4 text-center text-sm">
-          <p className="text-gray-600">
-            Don't have an account?{" "}
+          <p className="text-slate-300">
+            Don&apos;t have an account?{" "}
             <Link
               href="/signup"
-              className="text-blue-500 hover:text-blue-400 font-semibold"
+              className="font-semibold text-cyan-300 hover:text-cyan-200"
             >
               Sign up
             </Link>

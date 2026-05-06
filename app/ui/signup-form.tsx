@@ -25,21 +25,21 @@ export default function SignUpForm() {
 
   return (
     <form action={formAction} className="space-y-3">
-      <div className="flex-1 rounded-lg bg-gray-50 px-6 pb-4 pt-8">
-        <h1 className={`${lusitana.className} mb-3 text-2xl`}>
+      <div className="flex-1 rounded-lg border border-slate-800 bg-slate-900/80 px-6 pb-4 pt-8 shadow-sm shadow-slate-950/30">
+        <h1 className={`${lusitana.className} mb-3 text-2xl text-slate-100`}>
           Create your account.
         </h1>
         <div className="w-full">
           <div>
             <label
-              className="mb-3 mt-5 block text-xs font-medium text-gray-900"
+              className="mb-3 mt-5 block text-xs font-medium text-slate-200"
               htmlFor="email"
             >
               Email
             </label>
             <div className="relative">
               <input
-                className="peer block w-full rounded-md border border-gray-200 py-[9px] pl-10 text-sm outline-2 placeholder:text-gray-500"
+                className="peer block w-full rounded-md border border-slate-700 bg-slate-950/70 py-[9px] pl-10 text-sm text-slate-100 outline-2 placeholder:text-slate-500"
                 id="email"
                 type="email"
                 name="email"
@@ -47,7 +47,7 @@ export default function SignUpForm() {
                 required
                 aria-describedby="email-error"
               />
-              <AtSymbolIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-gray-500 peer-focus:text-gray-900" />
+              <AtSymbolIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-500 peer-focus:text-cyan-300" />
             </div>
             {/* zod validation is not done here instead done in server action because we want to keep the validation logic on the server side for security reasons? */}
             <div id="email-error" aria-live="polite" aria-atomic="true">
@@ -64,14 +64,14 @@ export default function SignUpForm() {
           </div>
           <div className="mt-4">
             <label
-              className="mb-3 mt-5 block text-xs font-medium text-gray-900"
+              className="mb-3 mt-5 block text-xs font-medium text-slate-200"
               htmlFor="password"
             >
               Password
             </label>
             <div className="relative">
               <input
-                className="peer block w-full rounded-md border border-gray-200 py-[9px] pl-10 text-sm outline-2 placeholder:text-gray-500"
+                className="peer block w-full rounded-md border border-slate-700 bg-slate-950/70 py-[9px] pl-10 text-sm text-slate-100 outline-2 placeholder:text-slate-500"
                 id="password"
                 type="password"
                 name="password"
@@ -80,7 +80,7 @@ export default function SignUpForm() {
                 minLength={6}
                 aria-describedby="password-error"
               />
-              <KeyIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-gray-500 peer-focus:text-gray-900" />
+              <KeyIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-500 peer-focus:text-cyan-300" />
             </div>
             <div id="password-error" aria-live="polite" aria-atomic="true">
               {state?.errors?.password &&
@@ -93,14 +93,14 @@ export default function SignUpForm() {
           </div>
           <div className="mt-4">
             <label
-              className="mb-3 mt-5 block text-xs font-medium text-gray-900"
+              className="mb-3 mt-5 block text-xs font-medium text-slate-200"
               htmlFor="confirmPassword"
             >
               Confirm Password
             </label>
             <div className="relative">
               <input
-                className="peer block w-full rounded-md border border-gray-200 py-[9px] pl-10 text-sm outline-2 placeholder:text-gray-500"
+                className="peer block w-full rounded-md border border-slate-700 bg-slate-950/70 py-[9px] pl-10 text-sm text-slate-100 outline-2 placeholder:text-slate-500"
                 id="confirmPassword"
                 type="password"
                 name="confirmPassword"
@@ -109,7 +109,7 @@ export default function SignUpForm() {
                 minLength={6}
                 aria-describedby="confirmPassword-error"
               />
-              <KeyIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-gray-500 peer-focus:text-gray-900" />
+              <KeyIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-500 peer-focus:text-cyan-300" />
             </div>
             <div
               id="confirmPassword-error"
@@ -129,7 +129,7 @@ export default function SignUpForm() {
         <Button className="mt-4 w-full" disabled={isPending}>
           {/* when is state pending? after the form is submitted and before the server action completes */}
           {isPending ? "Creating..." : "Sign Up"}{" "}
-          <ArrowRightIcon className="ml-auto h-5 w-5 text-gray-50" />
+          <ArrowRightIcon className="ml-auto h-5 w-5 text-slate-50" />
           {/* the content inside the Button component are children sent automatically to Button component? yes they are passed as children */}
         </Button>
         {/* ? is to check if the field exists. TS safety provided by it*/}
@@ -142,11 +142,11 @@ export default function SignUpForm() {
         {/* shows error messages apart from the field-specific ones: DB errors, or auth errors after account creation */}
 
         <div className="mt-4 text-center text-sm">
-          <p className="text-gray-600">
+          <p className="text-slate-300">
             Already have an account?{" "}
             <Link
               href="/login"
-              className="text-blue-500 hover:text-blue-400 font-semibold"
+              className="font-semibold text-cyan-300 hover:text-cyan-200"
             >
               Log in
             </Link>

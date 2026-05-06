@@ -43,6 +43,9 @@ from rag_pipeline import (
     build_question_chain,
 )
 
+import time
+from groq import RateLimitError as GroqRateLimitError
+
 
 app = FastAPI(title="Code Eval Hub — RAG Service")
 # Initialize the FastAPI application with a title, FastAPI() is a class provided by the FastAPI library. When you call FastAPI(), you are creating an instance of this class, which represents your web application. This instance is used to define your API endpoints and their behavior. The title parameter is an optional argument that sets the title of the API, which is displayed in the automatically generated documentation.
@@ -86,6 +89,7 @@ class QuestionRequest(BaseModel):
     repo_name: str
     contributor_login: str
     question_type: str = "general"
+    variation_seed: str | None = None
 #  TODOs : we're going to remove question type, instead get a user prompt if they want to give, and we're going to get a single request with all contributors, we can then generate their questions one by one and send back combined questions together. so we can have a list of contributor logins instead of a single contributor login, and then we can loop through that list to generate questions for each contributor and combine them together in the response.
 
 
@@ -144,6 +148,24 @@ def _update_repo_metadata(repo_id: str, latest_sha: str, faiss_uri: str):
     )
 
 
+def run_chain(chain, input_value=None):
+    """Invoke a LangChain RunnableSequence and map rate limit errors to HTTP 429.
+
+    Returns the chain output (string). Raises HTTPException on failure.
+    """
+    try:
+        return chain.invoke(input_value)
+    except Exception as e:
+        # Prefer specific groq RateLimitError mapping if available
+        name = e.__class__.__name__
+        msg = str(e)
+        if name == "RateLimitError" or "rate limit" in msg.lower():
+            # Ask client to retry after a short delay
+            raise HTTPException(status_code=429, detail="Rate limit exceeded, please retry shortly.", headers={"Retry-After": "5"})
+        # Generic failure
+        raise HTTPException(status_code=500, detail=f"Model error: {msg}")
+
+
 # ── Endpoints ──────────────────────────────────────────────────
 
 @app.get("/")
@@ -199,9 +221,8 @@ def summarize_repo(data: SummarizeRequest):
         raise HTTPException(status_code=500, detail="Vector store not available after ingestion.")
 
     chain = build_summary_chain(vs)
-    # where are we giving prompt? The prompt is defined within the build_summary_chain function in the rag_pipeline module. When we build the summary chain, we create a retriever from the vector store and then use that retriever to fetch relevant documents based on a query. The retrieved documents are then formatted and passed as context to the SUMMARY_PROMPT, which is used by the language model to generate the summary. So, while we don't explicitly pass a prompt in the summarize_repo endpoint, the prompt is implicitly used within the chain that we build using the vector store.
-    #  TODOs : add custom prompt handling.
-    summary = chain.invoke(None)
+    # Execute chain with central handler that maps rate-limit to HTTP 429
+    summary = run_chain(chain, None)
     return {"summary": summary}
 
 
@@ -216,9 +237,7 @@ def contributor_summary(data: ContributorRequest):
     )
 
     chain = build_contributor_summary_chain(vs, data.contributor_login)
-
-    summary = chain.invoke(None)
-
+    summary = run_chain(chain, None)
     return {"summary": summary}
 
 
@@ -234,8 +253,21 @@ def generate_questions(data: QuestionRequest):
         contributor_text, data.repo_id, scope=data.contributor_login
     )
 
-    chain_fn = build_question_chain(contrib_vs, data.contributor_login, data.question_type)
-    raw = chain_fn(None)   #None because the prompt is already defined in the chain, and we don't have any additional input to provide at this time. The chain will use the context from the vector store and the predefined prompt to generate the questions. If we had a dynamic prompt or additional input from the user, we could pass that in place of None when invoking the chain. But in this case, since we're using a static prompt defined within the chain, we can simply pass None to indicate that there is no additional input needed for generating the questions.
+    prompt_hints: list[str] = []
+    if data.question_type and data.question_type != "general":
+        prompt_hints.append(f"Question style hint: {data.question_type}")
+    if data.variation_seed:
+        prompt_hints.append(
+            "Variation seed (use only to vary wording/focus, do not output): "
+            f"{data.variation_seed}"
+        )
+
+    chain_fn = build_question_chain(
+        contrib_vs,
+        data.contributor_login,
+        "\n".join(prompt_hints),
+    )
+    raw = run_chain(chain_fn, None)
     # TODOs : enable sending custom prompt from next.js, and then pass that prompt here in collaboration with the static prompt defined in the chain. this way we can have more flexibility and allow users to specify their own prompts for question generation, which can lead to more relevant and tailored questions based on their specific needs or areas of interest.
 
     # Parse numbered list into array
@@ -258,7 +290,7 @@ def chat_with_repo(data: ChatRequest):
         raise HTTPException(status_code=400, detail="Repo not ingested.")
 
     chain = build_chat_chain(vs)
-    answer = chain.invoke(data.question)
+    answer = run_chain(chain, data.question)
     return {"answer": answer}
 
 
@@ -269,7 +301,7 @@ def batch_contributor_questions(data: BatchContributorRequest):
         contributor_text = build_contributor_text(data.owner, data.repo_name, login)
         vs = get_or_create_vector_store(contributor_text, data.repo_id, scope=login)
         chain_fn = build_question_chain(vs, login, data.custom_prompt)
-        raw = chain_fn(None)
+        raw = run_chain(chain_fn, None)
         questions = [
             re.sub(r"^\d+[\.\)]\s*", "", line).strip()
             for line in raw.strip().split("\n")
