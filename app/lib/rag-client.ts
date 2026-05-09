@@ -199,7 +199,7 @@ export async function generateQuestions(
 ): Promise<string[]> {
   const { owner, name } = repoMeta ?? (await fetchRepoOwnerName(repoId));
 
-  const call = async () =>
+  const callGenerateQuestions = async () =>
     fetch(`${RAG_URL}/generate-questions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -214,7 +214,7 @@ export async function generateQuestions(
       // repo ingestion should happen again.
     });
 
-  let res = await call();
+  let res = await callGenerateQuestions();
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);
@@ -224,7 +224,7 @@ export async function generateQuestions(
         `generateQuestions: repo ${repoId} not ingested yet; triggering ingestion before retry.`,
       );
       await triggerRepoIngestion(repoId);
-      res = await call();
+      res = await callGenerateQuestions();
     }
   }
 

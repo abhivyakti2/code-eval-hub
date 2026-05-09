@@ -40,7 +40,13 @@ type RepoMeta = { owner: string; name: string };
 const NOT_INGESTED_ERROR_MARKER = "not ingested";
 
 function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown error";
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Unknown error";
+  }
 }
 
 function toUserFriendlyErrorMessage(rawMessage: string, fallback: string): string {
