@@ -4,6 +4,7 @@ import { fetchRepoOwnerName } from "./data";
 import { randomUUID } from "crypto";
 
 const RAG_URL = process.env.RAG_SERVICE_URL ?? "http://localhost:8000";
+const NOT_INGESTED_ERROR_MARKER = "not ingested";
 
 export async function triggerRepoIngestion(repoId: string) {
   // TODO : should only happen if not ingested or when there's new commits,
@@ -65,7 +66,7 @@ export async function askRepoChat(repoId: string, question: string): Promise<str
     // why specially typecast to string here? because detail can be of any type (string, object, array, etc.) depending on how the server formats its error responses, and we want to ensure that we can safely call toLowerCase() on it without risking a runtime error if it's not a string. By casting it to a string, we can handle cases where detail might be undefined or not a string, and it will just become 'undefined' or '[object Object]' as a string, which won't cause our application to crash when we try to call toLowerCase() on it.
     // TODO : use typecasting in trigger ingestion too if it's correct.
 
-    if (res.status === 400 && detail.toLowerCase().includes("not ingested")) {
+    if (res.status === 400 && detail.toLowerCase().includes(NOT_INGESTED_ERROR_MARKER)) {
       // 400 Bad Request status code indicates that the server cannot process the request due to a client error, and in this case, the error message indicates that the repository has not been ingested yet. This is a specific scenario where we can attempt to trigger the ingestion process and then retry the chat request, as the lack of ingestion is likely the reason for the failure of the initial chat request.
       // TODO:check ingestion state before triggering ingestion? or in ingestion we can check.
       await triggerRepoIngestion(repoId);
@@ -124,7 +125,7 @@ export async function generateRepoSummary(repoId: string): Promise<string> {
     // TODO : inconsistent with other typecasting or doing as string. all need to be uniform.
 
     // check repo embeddings are there or not and ingest.
-    if (res.status === 400 && detail?.toLowerCase().includes("not ingested")) {
+    if (res.status === 400 && detail?.toLowerCase().includes(NOT_INGESTED_ERROR_MARKER)) {
       // TODO : check commitsha, if latest then no need to ingest. but carefully only update reposummarysha/ latest sha only after successful ingestions 
       await triggerRepoIngestion(repoId);
       res = await summarize();
@@ -218,7 +219,7 @@ export async function generateQuestions(
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);
     const detail = String(errorBody?.detail ?? `HTTP ${res.status}`);
-    if (res.status === 400 && detail.toLowerCase().includes("not ingested")) {
+    if (res.status === 400 && detail.toLowerCase().includes(NOT_INGESTED_ERROR_MARKER)) {
       console.info(
         `generateQuestions: repo ${repoId} not ingested yet; triggering ingestion before retry.`,
       );

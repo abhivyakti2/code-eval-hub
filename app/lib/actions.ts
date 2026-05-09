@@ -37,6 +37,7 @@ import {
 import { SignUpState, LoginState, AddRepoState } from "./definitions";
 
 type RepoMeta = { owner: string; name: string };
+const NOT_INGESTED_ERROR_MARKER = "not ingested";
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -47,8 +48,7 @@ function toUserFriendlyErrorMessage(rawMessage: string, fallback: string): strin
 
   if (
     message.includes("can't reach database server") ||
-    message.includes("prismaclientinitializationerror") ||
-    message.includes("database")
+    message.includes("prismaclientinitializationerror")
   ) {
     return "Database is temporarily unavailable. Please try again in a moment.";
   }
@@ -57,7 +57,7 @@ function toUserFriendlyErrorMessage(rawMessage: string, fallback: string): strin
     return "Service is currently busy. Please wait a moment and try again.";
   }
 
-  if (message.includes("not ingested")) {
+  if (message.includes(NOT_INGESTED_ERROR_MARKER)) {
     return "Repository data is still being prepared. Please try again in a moment.";
   }
 
