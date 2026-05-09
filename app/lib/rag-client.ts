@@ -219,6 +219,9 @@ export async function generateQuestions(
     const errorBody = await res.json().catch(() => null);
     const detail = String(errorBody?.detail ?? `HTTP ${res.status}`);
     if (res.status === 400 && detail.toLowerCase().includes("not ingested")) {
+      console.info(
+        `generateQuestions: repo ${repoId} not ingested yet; triggering ingestion before retry.`,
+      );
       await triggerRepoIngestion(repoId);
       res = await call();
     }

@@ -508,6 +508,7 @@ export async function checkAndUpdateRepo(repoId: string) {
   const latestSha = await fetchLatestCommitSha(repo.owner, repo.name);
   if (latestSha !== repo.lastCommitSha) {
     await triggerRepoIngestion(repoId);
+    revalidateTag(`repo-${repoId}`, "max");
   }
 }
 
