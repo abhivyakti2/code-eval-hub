@@ -149,8 +149,9 @@ export async function generateRepoSummary(repoId: string): Promise<string> {
 export async function generateContributorSummary(
   repoId: string,
   contributorLogin: string,
+  repoMeta?: { owner: string; name: string },
 ): Promise<string> {
-  const { owner, name } = await fetchRepoOwnerName(repoId);
+  const { owner, name } = repoMeta ?? (await fetchRepoOwnerName(repoId));
 
   const res = await fetch(`${RAG_URL}/contributor-summary`, {
     method: "POST",
@@ -195,9 +196,10 @@ export async function generateQuestions(
   // it will default to 'contributor'. but if the caller explicitly
   // TODO : sets scope to 'repository', then it will be 'repository'.
   questionType = "general",
+  repoMeta?: { owner: string; name: string },
   // TODO : what is questiontype? we're using features, so we can remove questiontype from db
 ): Promise<string[]> {
-  const { owner, name } = await fetchRepoOwnerName(repoId);
+  const { owner, name } = repoMeta ?? (await fetchRepoOwnerName(repoId));
 
   const res = await fetch(`${RAG_URL}/generate-questions`, {
     method: "POST",

@@ -58,10 +58,15 @@ export async function fetchChatsByRepo(userId: string, repositoryId: string) {
 //TODO : we should use try n catch like this in actions too, and keep this pattern consistent for error handling, and also log errors in a way that we can track them and fix them. 
 export async function fetchMessagesByChat(chatId: string) {
   try {
-    return await prisma.message.findMany({
-      where: { chatId },
-      orderBy: { createdAt: "asc" },
-    });
+    return await unstable_cache(
+      async () =>
+        prisma.message.findMany({
+          where: { chatId },
+          orderBy: { createdAt: "asc" },
+        }),
+      ["messages-by-chat", chatId],
+      { tags: [`chat-${chatId}`] },
+    )();
   } catch (err) {
     console.error("DB Error:", err);
     throw new Error("Failed to fetch messages.");
@@ -105,17 +110,22 @@ export async function fetchChatHistoryByUser(userId: string) {
 // TODO : where is this needed? when we open a chat? in which function is this being called?
 export async function fetchChatWithRepoAndContribs(chatId: string) {
   try {
-    return await prisma.chat.findUnique({
-      where: { id: chatId },
-      include: {
-        repository: {
+    return await unstable_cache(
+      async () =>
+        prisma.chat.findUnique({
+          where: { id: chatId },
           include: {
-            contributors: { orderBy: { totalCommits: "desc" } },
+            repository: {
+              include: {
+                contributors: { orderBy: { totalCommits: "desc" } },
+              },
+            },
+            //chatContribViewedShas: true, // per-contributor last-viewed SHA records
           },
-        },
-        //chatContribViewedShas: true, // per-contributor last-viewed SHA records
-      },
-    });
+        }),
+      ["chat-context", chatId],
+      { tags: [`chat-${chatId}`] },
+    )();
   } catch (err) {
     console.error("DB Error:", err);
     throw new Error("Failed to fetch chat context.");

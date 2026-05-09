@@ -9,7 +9,7 @@ import {
 import { ArrowRightIcon } from "@heroicons/react/20/solid";
 import { Button } from "./button";
 import { useActionState } from "react";
-import { authenticate } from "@/app/lib/actions";
+import { authenticate } from "../lib/actions";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { LoginState } from "../lib/definitions";
@@ -128,11 +128,13 @@ export default function LoginForm() {
         {error === "account_created_login_failed" && (
           <p className="text-sm text-amber-300">
             Account created! Please log in.
+            {/* but this is login page, why would account created be shown here? Because after signup if auto login fails, we redirect user to login */}
           </p>
         )}
         <div className="mt-4 text-center text-sm">
           <p className="text-slate-300">
             Don&apos;t have an account?{" "}
+            {/* why not just '? */}
             <Link
               href="/signup"
               className="font-semibold text-cyan-300 hover:text-cyan-200"

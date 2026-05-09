@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from '@/app/ui/button';
-import { generateRepoSummaryAction, triggerRepoIngestionAction } from '@/app/lib/actions';
+import { generateRepoSummaryAction, triggerRepoIngestionAction } from '../../lib/actions';
 
 export default function FeatureButtons({
   repoId,

@@ -93,6 +93,7 @@ model Chat {
   //only here because linked to questions right?
   @@unique([userId, repositoryId])
   @@index([repositoryId])
+  @@index([userId])
 }// TODO : shouldn't it be indexed based on user? same repo will not have more than 1 chat 
 // w/ a user, but different users have chats with same repo, will be easier to display 
 // single user's repos in history if indexed by user no?

@@ -18,9 +18,9 @@ export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     log:
-      process.env.NODE_ENV === 'development'
-        ? ['query', 'warn', 'error']
-        : ['error'],
+      process.env.PRISMA_LOG === "verbose"
+        ? [{ emit: "event", level: "query" }, "warn", "error"]
+        : ["warn", "error"],
   });
   //log is predefined option in PrismaClient that allows us to log 
   // different levels of information like queries, warnings, and errors. 

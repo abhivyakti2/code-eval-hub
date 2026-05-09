@@ -32,7 +32,8 @@ export default async function DashboardPage({
       </p>
       
     
-      <Suspense fallback={<RepoInputSkeleton/>}> 
+      <Suspense fallback={<RepoInputSkeleton/>}>  
+      {/* is this needed? is there client side hooks is input component? yes there are.*/}
         <RepoEvaluatorSection />
       </Suspense>
     </main>

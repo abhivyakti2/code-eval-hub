@@ -2,7 +2,7 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { useDebounce } from "use-debounce";
-import { addRepository } from "@/app/lib/actions";
+import { addRepository } from "../../lib/actions";
 import { validateGithubUrlFormat } from "@/app/lib/validate";
 import { Button } from "@/app/ui/button";
 import { AddRepoState } from "@/app/lib/definitions";

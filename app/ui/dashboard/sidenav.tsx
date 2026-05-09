@@ -1,17 +1,15 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import {
   CodeBracketIcon,
   HomeIcon,
   PowerIcon,
 } from "@heroicons/react/24/outline";
 import { fetchChatHistoryByUser } from "@/app/lib/data";
-import { auth, signOut } from "@/auth";
 import ChatHistory from "@/app/ui/dashboard/chat-history";
-import { logout } from "@/app/lib/actions";
+import { logout } from "../../lib/actions";
 
-export default async function SideNav() {
-  const session = await auth(); //to show user specific chat history, we need to get the user id from the session, and then fetch the chat history for that user from the database. if there is no session or user id, we can show a message to login to see chat history. but ig dashboard is not accessable without login, so we can assume that there will be a session and user id when this component is rendered.
-  const userId = (session?.user as { id?: string } | undefined)?.id;
+export default async function SideNav({ userId }: { userId?: string }) {
   const chats = userId ? await fetchChatHistoryByUser(userId) : [];
   return (
     <div className="flex h-full flex-col px-3 py-4 md:px-2">
@@ -34,7 +32,9 @@ export default async function SideNav() {
           </div>
           <div className="flex-1 overflow-y-auto px-2 pb-2">
             {userId ? (
-              <ChatHistory chats={chats} />
+              <Suspense fallback={<p className="px-3 py-2 text-sm text-slate-400">Loading chat history...</p>}>
+                <ChatHistory chats={chats} />
+              </Suspense>
             ) : (
               <p className="px-3 py-2 text-sm text-slate-400">
                 Sign in to view Chat history.

@@ -10,13 +10,11 @@ import {
   fetchCurrentGithubSha,
   sendChatMessageWithFeatures,
   updateChatViewedContribSummarySha,
-} from "@/app/lib/actions";
-import {
   generateAndStoreRepoSummary,
   generateAndStoreAllContribSummaries,
   updateChatViewedSha,
   updateContribViewedSha,
-} from "@/app/lib/actions";
+} from "../../lib/actions";
 //TODO : where else can this be used? if needed elsewhere, we can use it for consistency.
 
 // TODO : make questions for repo n contributor separate.
@@ -241,14 +239,6 @@ export default function ChatSection({
     }
   }, [viewMode]);
 
-  // Effect 1: fetch live SHA when entering summary view
-useEffect(() => {
-  if (viewMode !== "summary" || !repoOwner || !repoName) return;
-  void fetchCurrentGithubSha(repoOwner, repoName)
-    .then(setLiveGithubSha)
-    .catch(() => {}); //TODO : we should handle error properly here, maybe set an error state and show message to user that live GitHub SHA couldn't be fetched, which may affect the accuracy of summary staleness indicators. this way, user is informed about the issue and can understand that the staleness indicators may not be accurate without the live SHA. we can also consider showing a warning message in the UI if we fail to fetch the live SHA, so that user is aware of the potential issue with staleness indicators.
-}, [viewMode, repoOwner, repoName]);
-
 // Effect: Fetch live GitHub SHA on component mount (non-blocking)
 useEffect(() => {
   if (!repoOwner || !repoName || liveGithubSha) return;
@@ -353,7 +343,7 @@ useEffect(() => {
     const userMessage = buildUserMessage(userText, selected);
     setMessages((prev) => [
       ...prev,
-      { role: "user", content: userMessage, features: selected },
+      { id: crypto.randomUUID(), role: "user", content: userMessage, features: selected },
     ]);
     lastChangeRef.current = "user";
     setSelectedActions([]);
@@ -369,7 +359,7 @@ useEffect(() => {
       });
       if (activeChatIdRef.current !== requestChatId) return;
       lastChangeRef.current = "assistant";
-      setMessages((prev) => [...prev, { role: "assistant", content: answer }]);
+      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: answer }]);
     } catch (error) {
       if (activeChatIdRef.current !== requestChatId) return;
       const message =
@@ -564,7 +554,7 @@ useEffect(() => {
                 return (
                   // map has element, index arguments
                   <div
-                    key={idx}
+                    key={msg.id ?? `${msg.role}-${idx}`}
                     data-role={msg.role}
                     className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                   >

@@ -309,6 +309,7 @@ def batch_contributor_questions(data: BatchContributorRequest):
         ]
         results[login] = questions[:5]
     return {"questions": results}
+# TODOs: why make separate vector stores for all contributors? instean of for loop can these be parallel tasks?
 
 # TODOs : how is update made? in prior embeddings? shouldn't we modify older embedding and add new changes to it and store this updated one? making new vector stores is necessary or we can do updates in old embeddings easily?
 

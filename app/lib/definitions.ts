@@ -50,6 +50,7 @@ export type ChatHistoryItem = {
 export type RepoAction = MessageFeature;
 
 export type ChatMessage = {
+  id?: string;
   role: "user" | "assistant";
   content: string;
   features?: RepoAction[];
