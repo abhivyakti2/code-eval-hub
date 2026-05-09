@@ -38,6 +38,36 @@ import { SignUpState, LoginState, AddRepoState } from "./definitions";
 
 type RepoMeta = { owner: string; name: string };
 
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+function toUserFriendlyErrorMessage(rawMessage: string, fallback: string): string {
+  const message = rawMessage.toLowerCase();
+
+  if (
+    message.includes("can't reach database server") ||
+    message.includes("prismaclientinitializationerror") ||
+    message.includes("database")
+  ) {
+    return "Database is temporarily unavailable. Please try again in a moment.";
+  }
+
+  if (message.includes("rate limit") || message.includes("http 429")) {
+    return "Service is currently busy. Please wait a moment and try again.";
+  }
+
+  if (message.includes("not ingested")) {
+    return "Repository data is still being prepared. Please try again in a moment.";
+  }
+
+  if (message.includes("repository not found")) {
+    return "Repository could not be found. Please refresh and try again.";
+  }
+
+  return fallback;
+}
+
 async function ensureContributorsLoaded(repoId: string, repo: RepoMeta) {
   const count = await prisma.contributor.count({ where: { repositoryId: repoId } });
   if (count > 0) return;
@@ -379,14 +409,11 @@ export async function sendChatMessageWithFeatures(params: {
     return combined;
     // TODOS : revalidate tags can also cause error, they should not be in try catch, outside instead, separate from the actual message creation and fetching logic, otherwise any error in revalidation will cause the whole action to fail and user won't see the message created successfully, which is not ideal, we should log revalidation errors but not throw them
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("sendChatMessageWithFeatures failed:", message);
-
-    if (message.includes("Can't reach database server") || message.includes("PrismaClientInitializationError")) {
-      throw new Error("Database is temporarily unavailable. Please try again in a moment.");
-    }
-
-    throw new Error("Failed to send message. Please try again.");
+    console.error("sendChatMessageWithFeatures failed:", error);
+    const message = toErrorMessage(error);
+    throw new Error(
+      toUserFriendlyErrorMessage(message, "Failed to send message. Please try again."),
+    );
   }
 }
 
@@ -394,23 +421,34 @@ export async function generateAndStoreRepoSummary(
   repoId: string,
   currentSha: string,
 ): Promise<string> {
-  const repo = await prisma.repository.findUnique({
-    where: { id: repoId },
-    select: { lastSummarySha: true, repoSummary: true },
-  });
+  try {
+    const repo = await prisma.repository.findUnique({
+      where: { id: repoId },
+      select: { lastSummarySha: true, repoSummary: true },
+    });
 
-  if (repo?.lastSummarySha === currentSha) {
-    return repo.repoSummary ?? "";
-    // TODO : handle case where repoSummary is null but lastSummarySha matches currentSha, this can happen if summary generation failed previously, we should probably trigger a regeneration in this case instead of returning empty summary
+    if (repo?.lastSummarySha === currentSha) {
+      return repo.repoSummary ?? "";
+      // TODO : handle case where repoSummary is null but lastSummarySha matches currentSha, this can happen if summary generation failed previously, we should probably trigger a regeneration in this case instead of returning empty summary
+    }
+
+    const summary = await generateRepoSummary(repoId);
+    await prisma.repository.update({
+      where: { id: repoId },
+      data: { repoSummary: summary, lastSummarySha: currentSha },
+    });
+    revalidateTag(`repo-${repoId}`, "max");
+    return summary;
+  } catch (error) {
+    console.error("generateAndStoreRepoSummary failed:", error);
+    const message = toErrorMessage(error);
+    throw new Error(
+      toUserFriendlyErrorMessage(
+        message,
+        "Failed to generate repository summary. Please try again.",
+      ),
+    );
   }
-
-  const summary = await generateRepoSummary(repoId);
-  await prisma.repository.update({
-    where: { id: repoId },
-    data: { repoSummary: summary, lastSummarySha: currentSha },
-  });
-  revalidateTag(`repo-${repoId}`, "max");
-  return summary;
 }
 
 export async function generateAndStoreContribSummary(
@@ -418,21 +456,32 @@ export async function generateAndStoreContribSummary(
   contributorLogin: string,
   currentSha: string,
 ): Promise<string> {
-  const repo = await fetchRepoOwnerName(repoId);
-  await ensureContributorsLoaded(repoId, repo);
+  try {
+    const repo = await fetchRepoOwnerName(repoId);
+    await ensureContributorsLoaded(repoId, repo);
 
-  const summary = await generateContributorSummary(repoId, contributorLogin, repo);
-  await prisma.contributor.update({
-    where: {
-      repositoryId_githubLogin: {
-        repositoryId: repoId,
-        githubLogin: contributorLogin,
+    const summary = await generateContributorSummary(repoId, contributorLogin, repo);
+    await prisma.contributor.update({
+      where: {
+        repositoryId_githubLogin: {
+          repositoryId: repoId,
+          githubLogin: contributorLogin,
+        },
       },
-    },
-    data: { summary, lastSummarySha: currentSha },
-  });
-  revalidateTag(`repo-${repoId}`, "max");
-  return summary;
+      data: { summary, lastSummarySha: currentSha },
+    });
+    revalidateTag(`repo-${repoId}`, "max");
+    return summary;
+  } catch (error) {
+    console.error("generateAndStoreContribSummary failed:", error);
+    const message = toErrorMessage(error);
+    throw new Error(
+      toUserFriendlyErrorMessage(
+        message,
+        "Failed to generate contributor summary. Please try again.",
+      ),
+    );
+  }
 }
 
 export async function getOrCreateChat(
@@ -470,11 +519,34 @@ export async function fetchCurrentGithubSha(
 }
 
 export async function triggerRepoIngestionAction(repoId: string): Promise<void> {
-  await triggerRepoIngestion(repoId);
+  try {
+    await triggerRepoIngestion(repoId);
+    revalidateTag(`repo-${repoId}`, "max");
+  } catch (error) {
+    console.error("triggerRepoIngestionAction failed:", error);
+    const message = toErrorMessage(error);
+    throw new Error(
+      toUserFriendlyErrorMessage(
+        message,
+        "Failed to ingest repository right now. Please try again.",
+      ),
+    );
+  }
 }
 
 export async function generateRepoSummaryAction(repoId: string): Promise<string> {
-  return generateRepoSummary(repoId);
+  try {
+    return await generateRepoSummary(repoId);
+  } catch (error) {
+    console.error("generateRepoSummaryAction failed:", error);
+    const message = toErrorMessage(error);
+    throw new Error(
+      toUserFriendlyErrorMessage(
+        message,
+        "Failed to generate repository summary. Please try again.",
+      ),
+    );
+  }
 }
 
 export async function updateChatViewedSha(
@@ -503,34 +575,45 @@ export async function generateAndStoreAllContribSummaries(
   repoId: string,
   currentSha: string,
 ): Promise<Record<string, string>> {
-  const repo = await fetchRepoOwnerName(repoId);
-  await ensureContributorsLoaded(repoId, repo);
+  try {
+    const repo = await fetchRepoOwnerName(repoId);
+    await ensureContributorsLoaded(repoId, repo);
 
-  const contributors = await prisma.contributor.findMany({
-    where: { repositoryId: repoId },
-    select: { githubLogin: true },
-    orderBy: [{ totalCommits: "desc" }, { githubLogin: "asc" }],
-  });
+    const contributors = await prisma.contributor.findMany({
+      where: { repositoryId: repoId },
+      select: { githubLogin: true },
+      orderBy: [{ totalCommits: "desc" }, { githubLogin: "asc" }],
+    });
 
-  const results = await Promise.all(
-    contributors.map(async (contributor) => {
-      const summary = await generateContributorSummary(repoId, contributor.githubLogin, repo);
-      await prisma.contributor.update({
-        where: {
-          repositoryId_githubLogin: {
-            repositoryId: repoId,
-            githubLogin: contributor.githubLogin,
+    const results = await Promise.all(
+      contributors.map(async (contributor) => {
+        const summary = await generateContributorSummary(repoId, contributor.githubLogin, repo);
+        await prisma.contributor.update({
+          where: {
+            repositoryId_githubLogin: {
+              repositoryId: repoId,
+              githubLogin: contributor.githubLogin,
+            },
           },
-        },
-        data: { summary, lastSummarySha: currentSha },
-      });
-      return [contributor.githubLogin, summary] as const;
-    }),
-  );
+          data: { summary, lastSummarySha: currentSha },
+        });
+        return [contributor.githubLogin, summary] as const;
+      }),
+    );
 
-  const out: Record<string, string> = Object.fromEntries(results);
-  revalidateTag(`repo-${repoId}`, "max");
-  return out;
+    const out: Record<string, string> = Object.fromEntries(results);
+    revalidateTag(`repo-${repoId}`, "max");
+    return out;
+  } catch (error) {
+    console.error("generateAndStoreAllContribSummaries failed:", error);
+    const message = toErrorMessage(error);
+    throw new Error(
+      toUserFriendlyErrorMessage(
+        message,
+        "Failed to generate contributor summaries. Please try again.",
+      ),
+    );
+  }
 }
 
 export async function updateChatViewedContribSummarySha(

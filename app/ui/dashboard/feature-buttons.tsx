@@ -17,6 +17,12 @@ export default function FeatureButtons({
     try {
       const summary = await generateRepoSummaryAction(repoId);
       setResult(summary);
+    } catch (error) {
+      setResult(
+        error instanceof Error
+          ? error.message
+          : 'Failed to generate summary. Please try again.',
+      );
     } finally {
       setLoading(null);
     }
@@ -27,6 +33,12 @@ export default function FeatureButtons({
     try {
       await triggerRepoIngestionAction(repoId);
       setResult('Repository ingested successfully!');
+    } catch (error) {
+      setResult(
+        error instanceof Error
+          ? error.message
+          : 'Failed to ingest repository. Please try again.',
+      );
     } finally {
       setLoading(null);
     }

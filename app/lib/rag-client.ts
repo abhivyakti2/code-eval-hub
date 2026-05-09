@@ -45,9 +45,6 @@ export async function triggerRepoIngestion(repoId: string) {
     where: { id: repoId },
     data: { lastCommitSha: data.latest_sha },
   });
-
-  revalidateTag(`repo-${repoId}`, "max");
-  revalidatePath("/dashboard");
 }
 
 export async function askRepoChat(repoId: string, question: string): Promise<string> {
@@ -201,19 +198,31 @@ export async function generateQuestions(
 ): Promise<string[]> {
   const { owner, name } = repoMeta ?? (await fetchRepoOwnerName(repoId));
 
-  const res = await fetch(`${RAG_URL}/generate-questions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      repo_id: repoId,
-      owner,
-      repo_name: name,
-      contributor_login: contributorLogin,
-      question_type: questionType,
-      variation_seed: randomUUID(),
-    }), //TODO : latest version should be used. if not up to date,
-    // repo ingestion should happen again.
-  });
+  const call = async () =>
+    fetch(`${RAG_URL}/generate-questions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        repo_id: repoId,
+        owner,
+        repo_name: name,
+        contributor_login: contributorLogin,
+        question_type: questionType,
+        variation_seed: randomUUID(),
+      }), //TODO : latest version should be used. if not up to date,
+      // repo ingestion should happen again.
+    });
+
+  let res = await call();
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    const detail = String(errorBody?.detail ?? `HTTP ${res.status}`);
+    if (res.status === 400 && detail.toLowerCase().includes("not ingested")) {
+      await triggerRepoIngestion(repoId);
+      res = await call();
+    }
+  }
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);
