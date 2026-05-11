@@ -33,7 +33,7 @@ This avoids browser→RAG direct calls, reduces CORS pain, and keeps keys server
 
 ## Step-by-step deployment
 
-## 1) Prepare accounts/services
+### 1) Prepare accounts/services
 
 Create/confirm:
 - Vercel account
@@ -45,7 +45,7 @@ Create/confirm:
 
 ---
 
-## 2) Deploy RAG service to Render
+### 2) Deploy RAG service to Render
 
 1. In Render: **New + → Web Service**.
 2. Connect the same GitHub repo.
@@ -65,7 +65,7 @@ Notes:
 
 ---
 
-## 3) Deploy Next app to Vercel
+### 3) Deploy Next app to Vercel
 
 1. In Vercel: **Add New Project**.
 2. Import same GitHub repo.
@@ -77,7 +77,7 @@ Notes:
 
 ---
 
-## 4) Configure app-to-service connection
+### 4) Configure app-to-service connection
 
 In Vercel env:
 - `RAG_SERVICE_URL=https://<your-render-service>.onrender.com`
@@ -87,7 +87,7 @@ The Next app already reads this in:
 
 ---
 
-## 5) Run DB migrations for production database
+### 5) Run DB migrations for production database
 
 After setting `DATABASE_URL` to production DB, run Prisma migrations from a trusted environment:
 
@@ -99,7 +99,7 @@ npx prisma migrate deploy
 
 ---
 
-## 6) Smoke test flows
+### 6) Smoke test flows
 
 1. Sign up/login
 2. Add a repo
@@ -116,7 +116,7 @@ If ingestion/chat fail, check:
 
 ## Environment variables: exact mapping
 
-## Vercel (Next app)
+### Vercel (Next app)
 
 Required:
 - `DATABASE_URL` = your production Postgres connection string
@@ -131,7 +131,7 @@ Recommended:
 
 ---
 
-## Render (RAG service)
+### Render (RAG service)
 
 Required:
 - `GROQ_API_KEY`
@@ -151,12 +151,12 @@ Recommended:
 
 ## Do you need proxy/CORS?
 
-## Case A (recommended, current app pattern): Next server calls RAG
+### Case A (recommended, current app pattern): Next server calls RAG
 - **Proxy not required**.
 - **CORS not required for browser** because browser is not calling Render directly.
 - Best practice: add service-to-service API key auth.
 
-## Case B (browser directly calls Render)
+### Case B (browser directly calls Render)
 - You must enable strict CORS in RAG service.
 - Avoid this unless necessary.
 
@@ -164,9 +164,9 @@ Recommended:
 
 ## Code snippets to add (recommended hardening)
 
-## 1) Add internal API key between Vercel and Render
+### 1) Add internal API key between Vercel and Render
 
-### A. Next side
+#### A. Next side
 File: `app/lib/rag-client.ts`
 
 Add header helper and use it in all RAG fetch calls:
@@ -200,7 +200,7 @@ headers: ragHeaders()
 
 in all fetches to `/ingest`, `/chat`, `/summarize`, `/contributor-summary`, `/generate-questions`.
 
-### B. RAG side
+#### B. RAG side
 File: `rag-service/main.py`
 
 Add near imports:
@@ -239,7 +239,7 @@ Do same for `/ingest`, `/summarize`, `/contributor-summary`, `/generate-question
 
 ---
 
-## 2) Add CORS only if direct browser access to Render is needed
+### 2) Add CORS only if direct browser access to Render is needed
 
 File: `rag-service/main.py`
 
@@ -265,7 +265,7 @@ Set `ALLOWED_ORIGINS=https://your-app.vercel.app` on Render.
 
 ---
 
-## 3) Fail fast if `RAG_SERVICE_URL` missing in production
+### 3) Fail fast if `RAG_SERVICE_URL` missing in production
 
 File: `app/lib/rag-client.ts`
 
