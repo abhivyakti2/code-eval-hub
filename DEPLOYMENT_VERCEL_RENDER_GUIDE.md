@@ -245,7 +245,8 @@ File: `rag-service/main.py`
 import os
 from fastapi.middleware.cors import CORSMiddleware
 
-allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+allowed_origins = [origin for origin in (o.strip() for o in raw_origins.split(",")) if origin]
 
 if allowed_origins:
     app.add_middleware(
