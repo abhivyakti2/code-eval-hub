@@ -17,7 +17,7 @@ Current structure (good):
 - Next.js: `.` (repo root)
 - RAG: `./rag-service`
 
-If you later move Next into `NEXT/` and RAG into `RAG_SERVICE/`, that is also valid; just set each platform’s **Root Directory** accordingly.
+If you later move Next into `next-app/` and RAG into `rag-service/`, that is also valid; just set each platform’s **Root Directory** accordingly.
 
 ---
 
@@ -248,8 +248,7 @@ import os
 from fastapi.middleware.cors import CORSMiddleware
 
 raw_origins = os.getenv("ALLOWED_ORIGINS", "")
-origin_generator = (origin_item.strip() for origin_item in raw_origins.split(","))
-allowed_origins = [origin for origin in origin_generator if origin]
+allowed_origins = [origin for raw_origin in raw_origins.split(",") if (origin := raw_origin.strip())]
 
 if allowed_origins:
     app.add_middleware(
