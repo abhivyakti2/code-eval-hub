@@ -14,8 +14,8 @@
 ## Recommended repo structure
 
 Current structure (good):
-- Next.js: `/home/runner/work/code-eval-hub/code-eval-hub` (repo root)
-- RAG: `/home/runner/work/code-eval-hub/code-eval-hub/rag-service`
+- Next.js: `.` (repo root)
+- RAG: `./rag-service`
 
 If you later move Next into `NEXT/` and RAG into `RAG_SERVICE/`, that is also valid; just set each platform’s **Root Directory** accordingly.
 
@@ -83,7 +83,7 @@ In Vercel env:
 - `RAG_SERVICE_URL=https://<your-render-service>.onrender.com`
 
 The Next app already reads this in:
-- `/home/runner/work/code-eval-hub/code-eval-hub/app/lib/rag-client.ts`
+- `app/lib/rag-client.ts`
 
 ---
 
@@ -167,7 +167,7 @@ Recommended:
 ## 1) Add internal API key between Vercel and Render
 
 ### A. Next side
-File: `/home/runner/work/code-eval-hub/code-eval-hub/app/lib/rag-client.ts`
+File: `app/lib/rag-client.ts`
 
 Add header helper and use it in all RAG fetch calls:
 
@@ -201,7 +201,7 @@ headers: ragHeaders()
 in all fetches to `/ingest`, `/chat`, `/summarize`, `/contributor-summary`, `/generate-questions`.
 
 ### B. RAG side
-File: `/home/runner/work/code-eval-hub/code-eval-hub/rag-service/main.py`
+File: `rag-service/main.py`
 
 Add near imports:
 
@@ -236,7 +236,7 @@ Do same for `/ingest`, `/summarize`, `/contributor-summary`, `/generate-question
 
 ## 2) Add CORS only if direct browser access to Render is needed
 
-File: `/home/runner/work/code-eval-hub/code-eval-hub/rag-service/main.py`
+File: `rag-service/main.py`
 
 ```py
 import os
@@ -260,7 +260,7 @@ Set `ALLOWED_ORIGINS=https://your-app.vercel.app` on Render.
 
 ## 3) Fail fast if `RAG_SERVICE_URL` missing in production
 
-File: `/home/runner/work/code-eval-hub/code-eval-hub/app/lib/rag-client.ts`
+File: `app/lib/rag-client.ts`
 
 ```ts
 const RAG_URL = process.env.RAG_SERVICE_URL ?? "http://localhost:8000";
@@ -305,4 +305,3 @@ Only split if you need:
 - different release cadence.
 
 For your current goal (free Render + free Vercel), **single repo with two services is the best path**.
-
