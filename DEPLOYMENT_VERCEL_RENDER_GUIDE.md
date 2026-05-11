@@ -225,7 +225,10 @@ Then in each POST endpoint signature, add header input and check at start:
 
 ```py
 @app.post("/chat")
-def chat_with_repo(data: ChatRequest, x_internal_api_key: str | None = Header(default=None)):
+def chat_with_repo(
+    data: ChatRequest,
+    x_internal_api_key: str | None = Header(default=None, alias="x-internal-api-key"),
+):
     verify_internal_api_key(x_internal_api_key)
     ...
 ```
