@@ -213,7 +213,7 @@ from fastapi import Header
 Add helper:
 
 ```py
-def verify_internal_api_key(x_internal_api_key: str | None):
+def verify_internal_api_key(x_internal_api_key: str | None) -> None:
     expected = os.getenv("RAG_INTERNAL_API_KEY")
     if not expected:
         return
@@ -246,7 +246,8 @@ import os
 from fastapi.middleware.cors import CORSMiddleware
 
 raw_origins = os.getenv("ALLOWED_ORIGINS", "")
-allowed_origins = [origin for origin in (raw_origin.strip() for raw_origin in raw_origins.split(",")) if origin]
+stripped_origins = (origin_item.strip() for origin_item in raw_origins.split(","))
+allowed_origins = [origin for origin in stripped_origins if origin]
 
 if allowed_origins:
     app.add_middleware(
