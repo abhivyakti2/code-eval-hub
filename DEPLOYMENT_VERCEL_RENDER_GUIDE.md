@@ -121,7 +121,7 @@ If ingestion/chat fail, check:
 Required:
 - `DATABASE_URL` = your production Postgres connection string
 - `GITHUB_TOKEN` = GitHub token for API calls
-- `RAG_SERVICE_URL` = Render service base URL (use format `https://<service>.onrender.com` without trailing `/`; a trailing slash usually still works but can produce `//endpoint` URLs in logs)
+- `RAG_SERVICE_URL`: Render service base URL. Use `https://<service>.onrender.com` (without trailing `/`). A trailing slash usually still works but can produce `//endpoint` URLs in logs.
 - `AUTH_SECRET` = random secret for NextAuth v5
 
 Recommended:
