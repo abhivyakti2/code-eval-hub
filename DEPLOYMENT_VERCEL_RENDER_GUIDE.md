@@ -121,7 +121,7 @@ If ingestion/chat fail, check:
 Required:
 - `DATABASE_URL` = your production Postgres connection string
 - `GITHUB_TOKEN` = GitHub token for API calls
-- `RAG_SERVICE_URL` = Render service base URL (no trailing slash preferred)
+- `RAG_SERVICE_URL` = Render service base URL (use format `https://<service>.onrender.com` without trailing `/`; a trailing slash usually still works but can produce `//endpoint` URLs in logs)
 - `AUTH_SECRET` = random secret for NextAuth v5
 
 Recommended:
@@ -246,7 +246,7 @@ import os
 from fastapi.middleware.cors import CORSMiddleware
 
 raw_origins = os.getenv("ALLOWED_ORIGINS", "")
-allowed_origins = [origin for origin in (o.strip() for o in raw_origins.split(",")) if origin]
+allowed_origins = [origin for origin in (raw_origin.strip() for raw_origin in raw_origins.split(",")) if origin]
 
 if allowed_origins:
     app.add_middleware(
