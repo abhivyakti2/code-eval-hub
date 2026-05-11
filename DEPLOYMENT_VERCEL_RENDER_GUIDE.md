@@ -121,7 +121,7 @@ If ingestion/chat fail, check:
 Required:
 - `DATABASE_URL` = your production Postgres connection string
 - `GITHUB_TOKEN` = GitHub token for API calls
-- `RAG_SERVICE_URL`: Render service base URL. Use `https://<service>.onrender.com` (without trailing `/`). A trailing slash usually still works but can produce `//endpoint` URLs in logs.
+- `RAG_SERVICE_URL`: Render service base URL. Use `https://<service>.onrender.com` (without trailing `/`).
 - `AUTH_SECRET` = random secret for NextAuth v5
 
 Recommended:
@@ -221,6 +221,8 @@ def verify_internal_api_key(x_internal_api_key: str | None) -> None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 ```
 
+If you want fail-closed behavior, set `RAG_INTERNAL_API_KEY` on Render and Vercel in all non-local environments so auth is always enforced.
+
 Then in each POST endpoint signature, add header input and check at start:
 
 ```py
@@ -246,8 +248,8 @@ import os
 from fastapi.middleware.cors import CORSMiddleware
 
 raw_origins = os.getenv("ALLOWED_ORIGINS", "")
-stripped_origins = (origin_item.strip() for origin_item in raw_origins.split(","))
-allowed_origins = [origin for origin in stripped_origins if origin]
+origin_generator = (origin_item.strip() for origin_item in raw_origins.split(","))
+allowed_origins = [origin for origin in origin_generator if origin]
 
 if allowed_origins:
     app.add_middleware(
