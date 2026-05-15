@@ -148,7 +148,9 @@ export async function authenticate(
     if (error instanceof AuthError) {
       switch (error.type) {
         case "CredentialsSignin":
-          return { message: error.message ?? "Invalid credentials." };
+          // next-auth surfaces authorize failures as CredentialsSignin.
+          // Provide a user-friendly message instead of leaking technical error details.
+          return { message: "Email or password is incorrect." };
         default:
           return { message: "Something went wrong." };
       }
