@@ -18,6 +18,10 @@ async function getUser(email: string) {
 
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  // Ensure correct redirect URL construction on Vercel/proxies.
+  // NextAuth builds absolute callback/redirect URLs from NEXTAUTH_URL.
+  // trustHost helps NextAuth accept the forwarded host.
+  trustHost: true,
   ...authConfig,
   callbacks: { 
     //not arbitrary, these are the only callbacks next auth recognizes.

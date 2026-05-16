@@ -3,7 +3,7 @@ import { prisma } from "./db";
 import { fetchRepoOwnerName } from "./data";
 import { randomUUID } from "crypto";
 
-const RAG_URL = process.env.RAG_SERVICE_URL ?? "http://localhost:8000";
+const RAG_URL = process.env.RAG_SERVICE_URL ?? "https://code-eval-hub.onrender.com";
 
 export async function triggerRepoIngestion(repoId: string) {
   // TODO : should only happen if not ingested or when there's new commits,
