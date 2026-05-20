@@ -17,6 +17,9 @@ AWS_REGION = os.getenv("AWS_REGION", "auto")      # "auto" works for R2
 DEFAULT_TMP = os.path.join(tempfile.gettempdir(), "vector-stores")
 VECTOR_STORE_TMP = os.getenv("VECTOR_STORE_TMP", DEFAULT_TMP)
 
+HF_TOKEN = os.getenv("HF_TOKEN")  # Hugging Face token for HF hosted embedding endpoints
+
+
 # difference beteen os and dotenv: os is a built-in module in Python that provides a way to interact with the operating system, while dotenv is a third-party library that allows you to read key-value pairs from a .env file and set them as environment variables. In this code, we use dotenv to load environment variables from a .env file, and then we use os.getenv to access those variables in our code.
 # no way to directly access .env variables without loading them into environment variables, because .env is just a file that contains key-value pairs, and it doesn't have any functionality to make those variables available in the code. We need to use a library like dotenv to read the .env file and set the variables as environment variables, which can then be accessed using os.getenv or other similar functions in Python.
 

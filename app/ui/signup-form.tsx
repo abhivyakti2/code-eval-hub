@@ -7,7 +7,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { ArrowRightIcon } from "@heroicons/react/20/solid";
 import { Button } from "./button";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { register} from "@/app/lib/actions";
 import Link from "next/link";
 import { SignUpState } from "../lib/definitions";
@@ -15,8 +15,24 @@ import { SignUpState } from "../lib/definitions";
 export default function SignUpForm() {
   const initialState: SignUpState = { message: null, errors: {} };
 
+  // Local overrides for server-returned errors (useActionState state is read-only)
+  const [fieldErrors, setFieldErrors] = useState<
+    Record<string, string[]>
+  >({});
+
   //we can name the state whatever we want, it is just a variable. formAction is the function we will call on form submit, and isPending is a boolean that indicates if the action is currently being executed.
   const [state, formAction, isPending] = useActionState(register, initialState);
+
+  const showMessage = !!state?.message;
+
+  // merge server errors with local overrides
+  const emailErrors =
+    fieldErrors.email ?? (state?.errors as any)?.email;
+  const passwordErrors =
+    fieldErrors.password ?? (state?.errors as any)?.password;
+  const confirmPasswordErrors =
+    fieldErrors.confirmPassword ?? (state?.errors as any)?.confirmPassword;
+
   //what does useActionState do? It is a custom hook that manages the state of an action, including the loading state and any errors or messages returned by the action. It takes an action function and an initial state as arguments, 
   // and returns the current state, a function to execute the action, and a boolean indicating if the action is currently being executed.
   // state is returned from the server action, and it can contain any data that we want to send back to the client, such as error messages or success messages. We can use this state to display feedback to the user based on the result of the action.
@@ -46,20 +62,20 @@ export default function SignUpForm() {
                 placeholder="Enter your email address"
                 required
                 aria-describedby="email-error"
+                onChange={() => {
+                  setFieldErrors((prev) => ({ ...prev, email: [] }));
+                }}
               />
               <AtSymbolIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-500 peer-focus:text-cyan-300" />
             </div>
             {/* zod validation is not done here instead done in server action because we want to keep the validation logic on the server side for security reasons? */}
             <div id="email-error" aria-live="polite" aria-atomic="true">
-              {state?.errors?.email &&
-                state.errors.email.map(
-                  (error: string) => (
-                    <p className="text-sm text-red-500" key={error}>
-                      {error}
-                    </p>
-                  ), //circular brackets are used to return the JSX element directly from the arrow function, without needing an explicit return statement.
-                  // If we used curly braces instead, we would need to add a return statement to return the JSX element.
-                )}
+              {emailErrors &&
+                emailErrors.map((error: string) => (
+                  <p className="text-sm text-red-500" key={error}>
+                    {error}
+                  </p>
+                ))}
             </div>
           </div>
           <div className="mt-4">
@@ -79,12 +95,15 @@ export default function SignUpForm() {
                 required
                 minLength={6}
                 aria-describedby="password-error"
+                onChange={() => {
+                  setFieldErrors((prev) => ({ ...prev, password: [] }));
+                }}
               />
               <KeyIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-500 peer-focus:text-cyan-300" />
             </div>
             <div id="password-error" aria-live="polite" aria-atomic="true">
-              {state?.errors?.password &&
-                state.errors.password.map((error: string) => (
+              {passwordErrors &&
+                passwordErrors.map((error: string) => (
                   <p className="text-sm text-red-500" key={error}>
                     {error}
                   </p>
@@ -108,6 +127,9 @@ export default function SignUpForm() {
                 required
                 minLength={6}
                 aria-describedby="confirmPassword-error"
+                onChange={() => {
+                  setFieldErrors((prev) => ({ ...prev, confirmPassword: [] }));
+                }}
               />
               <KeyIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-500 peer-focus:text-cyan-300" />
             </div>
@@ -116,8 +138,8 @@ export default function SignUpForm() {
               aria-live="polite"
               aria-atomic="true"
             >
-              {state?.errors?.confirmPassword &&
-                state.errors.confirmPassword.map((error: string) => (
+              {confirmPasswordErrors &&
+                confirmPasswordErrors.map((error: string) => (
                   <p className="text-sm text-red-500" key={error}>
                     {error}
                   </p>
@@ -133,7 +155,7 @@ export default function SignUpForm() {
           {/* the content inside the Button component are children sent automatically to Button component? yes they are passed as children */}
         </Button>
         {/* ? is to check if the field exists. TS safety provided by it*/}
-        {state?.message && (
+        {state?.message && showMessage && (
           <div className="flex h-8 items-end space-x-1">
             <ExclamationCircleIcon className="h-5 w-5 text-red-500" />
             <p className="text-sm text-red-500">{state.message}</p>

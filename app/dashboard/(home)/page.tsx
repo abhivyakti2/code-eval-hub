@@ -2,40 +2,40 @@ import { auth } from '@/auth';
 import { Suspense } from 'react';
 import RepoEvaluatorSection from '@/app/ui/dashboard/repo-evaluator';
 import { RepoInputSkeleton } from '@/app/ui/skeletons';
-
-//searchParams prop is passed from the layout file, which is a promise that 
-// resolves to the actual search params object. This allows us to fetch any 
-// necessary data based on the search params before rendering the page, ensuring 
-// that we have all the required information to display the dashboard correctly. 
-// By awaiting the searchParams promise, we can access the repoId and chatId 
-// directly in our component and determine if there's an active repository to 
-// display or if we should show the welcome message and input form for adding 
-// a new repository.
+import DemoBanner from '@/app/ui/dashboard/demo-banner';
 
 export default async function DashboardPage({
   searchParams,
-  // TODO: we can use the search params to determine if we should show the repo evaluator section or the chat section. If there's a repoId in the search params, we can show the chat section for that repo. If there's no repoId, we can show the repo evaluator section. This way, we can have a single page that handles both the initial repository evaluation and the subsequent chat interactions based on the presence of the repoId in the search params.
-}:{ searchParams?: Promise<{repoId?: string; chatId?: string}>;
+}: {
+  searchParams?: Promise<{ repoId?: string; chatId?: string }>;
 }) {
   const session = await auth();
-  const userId = session!.user!.id as string;
-  
+
   return (
-    // You get one main content area per page, not multiple and never nested.
     <main className="flex h-full min-h-0 w-full flex-col text-slate-100">
-      
       <h1 className="mb-4 text-xl font-semibold md:text-2xl">
-        Welcome back, {session?.user?.email?.split('@')[0] ?? 'User'} 👋
+        Welcome back, {session?.user?.email?.split('@')[0] ?? 'User'}
       </h1>
-      <p className="mb-6 max-w-2xl text-slate-300">
+      <p className="mb-2 max-w-2xl text-slate-300">
         Enter a GitHub repository URL below to start analysing and chatting with the codebase.
       </p>
-      
-    
-      <Suspense fallback={<RepoInputSkeleton/>}> 
+
+      <div className="mb-6 space-y-1 rounded-md border border-slate-700 bg-slate-800/50 px-4 py-3 text-xs text-slate-400">
+        <p>
+          <span className="font-medium text-slate-300">
+            First-time repos take a few minutes.
+          </span>{' '}
+          Your first chat message or summary for a new repository triggers code ingestion, so expect a short wait before the response appears. The same applies to contributor summaries and evaluation questions on a repo being analysed for the first time.
+        </p>
+      </div>
+
+      <Suspense fallback={<RepoInputSkeleton />}>
         <RepoEvaluatorSection />
       </Suspense>
+
+      <div className="mt-auto pt-8">
+        <DemoBanner />
+      </div>
     </main>
   );
 }
-

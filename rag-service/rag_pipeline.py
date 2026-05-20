@@ -38,7 +38,8 @@ def format_docs(docs):
 
 CHAT_PROMPT = PromptTemplate(
     template="""You are an expert software engineer analysing a GitHub repository.
-Answer the question using ONLY the code and files provided below.
+Answer the question using ONLY the code, files, and context provided below.
+When relevant, connect your answer to the product's purpose and the problem it solves.
 If the answer is not in the provided context, say "I don't know based on the available code."
 
 Context (repository files):
@@ -70,18 +71,20 @@ def build_chat_chain(vector_store):
 
 # ── Repo Summary ───────────────────────────────────────────────
 
+
 SUMMARY_PROMPT = PromptTemplate(
-    template="""You are a senior software engineer. Based on the repository code below,
+    template="""You are a senior software engineer and product thinker. Based on the repository code below,
 write a concise but comprehensive summary covering:
-- Purpose and main functionality
-- Tech stack and architecture
+- Problem this project solves and who it is for
+- Core product features and user-facing functionality
+- Tech stack and architecture decisions
 - Code quality observations
 - Notable patterns or areas of concern
 
 Repository code:
 {context}
 
-Write your summary in clear paragraphs.
+Write your summary in clear paragraphs. Lead with the product problem, then go into technical depth.
 """,
     input_variables=["context"],
 )
@@ -107,16 +110,18 @@ def build_summary_chain(vector_store):
 
 CONTRIBUTOR_PROMPT = PromptTemplate(
     template="""You are evaluating a software contributor based on their commit diffs.
-Commit diffs for {login}:
+Contributor: {login}
+Commit diffs:
 {context}
 
 Provide a summary covering:
+- Which product features or user-facing problems their work touches
 - Areas of the codebase they work on most
-- Nature of their contributions (features, bugs, refactors, docs)
-- Overall activity level
-- Any notable patterns
+- Nature of contributions (features, bugfixes, refactors, docs, infra)
+- Overall activity level and consistency
+- Any notable patterns in how they approach problems
 
-Be factual and professional.
+Be factual and professional. Connect technical work to product impact where possible.
 """,
     input_variables=["context", "login"],
 )
@@ -153,8 +158,10 @@ Commit diffs:
 
 Generate 5 specific, thoughtful evaluation questions about this contributor's actual work.
 Vary difficulty: 2 easy, 2 medium, 1 hard.
-Ensure each generation has varied wording and focus areas (architecture, correctness, testing, trade-offs, maintainability).
-If a variation seed is provided in the prompt hints, use it only to diversify output; never print the seed.
+Mix technical and product-thinking angles: at least one question should ask why a decision was made 
+from a user or product perspective, not just a code perspective.
+Vary focus across: architecture, correctness, trade-offs, product reasoning, maintainability.
+If a variation seed is provided, use it only to diversify output; never print it.
 Return ONLY a numbered list. No preamble.
 """,
     input_variables=["context", "login", "custom_prompt"],

@@ -6,8 +6,10 @@
 // but is it better than api directory? for simple actions that are closely tied to a specific page or component, server actions can be more convenient and lead to cleaner code. No api calls needed, just direct function calls. But for more complex logic, or when you want to reuse the same logic across multiple pages or components, it might be better to create API routes in the /api directory. It really depends on the specific use case and how you want to organize your code.
 
 import { revalidatePath, revalidateTag } from "next/cache";
+
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import crypto from "crypto";
 import { auth, signIn, signOut } from "@/auth";
 //auth gives session, what gives token? cookie in browser? and how? when we sign in, next-auth creates a session for the user and sets a cookie in the user's browser that contains a session token. This token is used to identify the user's session on subsequent requests. When the user makes a request to the server, the cookie is sent along with the request, and next-auth uses the token in the cookie to retrieve the session information for that user. This allows next-auth to manage user authentication and maintain session state across different pages and requests without requiring the user to log in again each time.
 // cookie automatically sent with each request, but it's checked where? for sign in it happens in the authorize method of the credentials provider, On subsequent requests, next-auth checks the cookie for the session token, retrieves the corresponding session from the database, and makes it available in the request context. This is how next-auth manages authentication state across requests.
@@ -22,10 +24,17 @@ import {
   fetchLatestCommitSha,
 } from "@/app/lib/github";
 import { fetchRepoOwnerName, fetchRepoLastCommitSha } from "@/app/lib/data";
+import { sendResetEmail } from "@/app/lib/email";
 import bcrypt from "bcrypt";
 import { AuthError } from "next-auth";
 import { MessageFeature } from "@prisma/client";
-import { SignUpState, LoginState, AddRepoState } from "./definitions";
+import {
+  SignUpState,
+  LoginState,
+  AddRepoState,
+  ForgotPasswordState,
+  ResetPasswordState,
+} from "./definitions";
 import { triggerRepoIngestion, generateQuestions, generateRepoSummary, generateContributorSummary, askRepoChat } from "./rag-client";
 //is it needed to import MessageFeature type here? yes, because we are using it in the sendChatMessageWithFeatures function to type the features of a message. It helps ensure that we are only using valid features that are defined in our Prisma schema, and it provides better type safety and autocompletion in our code editor when working with message features. and since we're just using type not data, security is not a concern here.
 // don’t use import type for Prisma enums because they are real runtime values, not just types.
@@ -53,6 +62,16 @@ const LoginSchema = z.object({
 });
 //these messages are sent only when there's a corresponding error,
 // so we can be specific with them, and they will be displayed in the UI
+
+const ResetPasswordSchema = z
+  .object({
+    password: z.string().min(6, { message: "Password must be at least 6 characters." }),
+    confirmPassword: z.string().min(6),
+  })
+  .refine((d) => d.password === d.confirmPassword, {
+    message: "Passwords do not match.",
+    path: ["confirmPassword"],
+  });
 
 export async function register(prevState: SignUpState, formData: FormData) {
   const validatedFields = SignUpSchema.safeParse({
@@ -90,16 +109,8 @@ export async function register(prevState: SignUpState, formData: FormData) {
     };
   }
 
-  try {
-    await signIn("credentials", formData);
-    //formData also contains confirmPassword, but it will be ignored by the
-    // credentials provider(we defined the authorize method), so it won't cause any issue.
-  } catch (error) {
-    if (error instanceof AuthError) {
-        redirect("/login?error=account_created_login_failed");
-    }
-    throw error;
-  }
+  await signIn("credentials", { email, password, redirectTo: "/dashboard" });
+
 
   //tags are like labels you stick on cached data.
   // You add them when caching/fetching data.
@@ -163,16 +174,65 @@ return {}; // unreachable — NextAuth redirects
 // On success NextAuth throws an internal redirect (not returned), so TypeScript's reachability analysis is fine if you add return {} at the end of the happy path (it won't be reached)
 }
 
+export async function requestPasswordReset(
+  prevState: ForgotPasswordState,
+  formData: FormData,
+): Promise<ForgotPasswordState> {
+  const email = formData.get("email") as string;
+  if (!email) return { error: "Email is required." };
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  // Always return success so the form never reveals whether an email is registered.
+  if (!user) return { message: "If that email exists, a reset link has been sent." };
+
+  const token = crypto.randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60);
+
+  await prisma.passwordResetToken.create({
+    data: { userId: user.id, token, expiresAt },
+  });
+
+  const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password?token=${token}`;
+  await sendResetEmail(email, resetUrl);
+
+  return { message: "If that email exists, a reset link has been sent." };
+}
+
+export async function resetPassword(
+  prevState: ResetPasswordState,
+  formData: FormData,
+): Promise<ResetPasswordState> {
+  const token = formData.get("token") as string;
+  const validated = ResetPasswordSchema.safeParse({
+    password: formData.get("password"),
+    confirmPassword: formData.get("confirmPassword"),
+  });
+
+  if (!validated.success) {
+    return { errors: validated.error.flatten().fieldErrors };
+  }
+
+  const record = await prisma.passwordResetToken.findUnique({ where: { token } });
+
+  if (!record || record.used || record.expiresAt < new Date()) {
+    return { error: "Reset link is invalid or has expired." };
+  }
+
+  const hashed = await bcrypt.hash(validated.data.password, 10);
+
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: record.userId }, data: { password: hashed } }),
+    prisma.passwordResetToken.update({ where: { token }, data: { used: true } }),
+  ]);
+
+  redirect("/login?message=password_reset");
+}
+
 // TODO : this isn't a server action, move non server actions to separate file and import to use in server action. or move down to this file's end.
 export async function logout() {
-  try {
-    await signOut({ redirectTo: "/login" }); // signOut throws a redirect internally.
-  } catch (error) {
-    console.error("logout: signOut failed", error);
-    // Ensure we still redirect to login instead of returning a 500 to the client
-    redirect("/login");
-  }
+  await signOut({ redirectTo: "/login" });
 }
+
 
 const GithubUrlSchema = z
   .string()
@@ -286,10 +346,15 @@ export async function addRepository(
     return { error: "Failed to add repository from Github." };
     // TODO : can be something else. there's s many await used in try.
   }
-  revalidateTag("repositories", "max");
-  revalidateTag(`repo-${createdId}`, "max");
-  revalidatePath("/dashboard"); //happens for all users? even if only one creates a new chat?
-  // yes, because the dashboard is server-rendered and the cache is shared across users.
+
+  if (!createdId || !chatId) {
+    // Safety guard: prevents redirect() from throwing due to undefined ids.
+    return { error: "Failed to initialize chat for this repository." };
+  }
+
+  revalidateTag("repositories", "default");
+  revalidateTag(`repo-${createdId}`, "default");
+  // revalidateTag(`chat-history-${userId}`) is already handled inside getOrCreateChat
   redirect(
     `/dashboard/chat?repoId=${createdId}&chatId=${chatId}&github_url=${encodeURIComponent(parsed.data)}&repo_name=${encodeURIComponent(repo)}`,
   );
@@ -308,24 +373,22 @@ export async function deleteRepository(id: string) {
   if (!userId) redirect("/login");
 // restore state n delete repo after authentication? but we only want current user's chats to be deleted, not every user that chatted with this repo
 
-  await prisma.$transaction(async (tx) => {
-    await tx.chat.deleteMany({
-      // TODO : why delete many? we only want to delete chat of a user,
-      // not all chats related to that repo, because other users may also have that repo in their dashboard.
-      where: { userId, repositoryId: id },
-    });
-
-    const stillLinked = await tx.chat.count({
-      where: { repositoryId: id },
-    });
-
-    if (stillLinked === 0) {
-      await tx.repository.delete({ where: { id } });
-    }
+  await prisma.chat.deleteMany({
+    // TODO : why delete many? we only want to delete chat of a user,
+    // not all chats related to that repo, because other users may also have that repo in their dashboard.
+    where: { userId, repositoryId: id },
   });
 
-  revalidateTag("repositories", "max");
-  revalidateTag(`repo-${id}`, "max");
+  const stillLinked = await prisma.chat.count({
+    where: { repositoryId: id },
+  });
+
+  if (stillLinked === 0) {
+    await prisma.repository.delete({ where: { id } });
+  }
+
+  revalidateTag("repositories", "default");
+  revalidateTag(`repo-${id}`, "default");
   revalidatePath("/dashboard");
 }
 
@@ -354,6 +417,9 @@ export async function sendChatMessageWithFeatures(params: {
   ) {
     throw new Error("Please enter a message for repo chat.");
   }
+
+  const session = await auth();
+  const userId = (session?.user as { id?: string } | undefined)?.id;
 
   try {
     const priorUserMsgCount = await prisma.message.count({
@@ -441,6 +507,10 @@ export async function sendChatMessageWithFeatures(params: {
     });
     //TODO : error handling for db write?
 
+    if (userId) {
+      revalidateTag(`chat-history-${userId}`, "max");
+    }
+
     revalidateTag(`repo-${repoId}`, "max");
     revalidatePath("/dashboard");
     return combined;
@@ -526,8 +596,8 @@ export async function getOrCreateChat(
     });// ToDO : error handling for chat creation? because if it fails, we should handle that gracefully and maybe log the error, but we might still want to return a message indicating that the chat could not be created, depending on how critical it is to have the chat created for the user. We can catch any errors thrown by the prisma.chat.create call and decide how to handle them based on our application's needs.
   }
 
-  revalidateTag(`repo-${repositoryId}`, "max");
-  revalidatePath("/dashboard");
+  revalidateTag(`repo-${repositoryId}`,"default");
+  revalidateTag(`chat-history-${userId}`,"default");
   return chat.id;
 }
 

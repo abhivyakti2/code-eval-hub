@@ -1,0 +1,18 @@
+.markdown-content {
+  @apply prose prose-invert prose-sm max-w-none
+      prose-p:my-2 prose-p:leading-relaxed
+      prose-headings:mt-4 prose-headings:mb-2 prose-headings:font-semibold prose-headings:text-slate-100
+      prose-h1:text-lg prose-h2:text-base prose-h3:text-sm
+      prose-strong:text-slate-100
+      prose-a:text-cyan-400 hover:prose-a:text-cyan-300 prose-a:no-underline hover:prose-a:underline
+      prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5 prose-li:marker:text-slate-500
+      prose-code:rounded prose-code:bg-slate-800/80 prose-code:px-1.5 prose-code:py-0.5
+      prose-code:text-cyan-300 prose-code:text-[0.85em] prose-code:before:content-[''] prose-code:after:content-['']
+      prose-pre:my-3 prose-pre:rounded-lg prose-pre:border prose-pre:border-slate-800
+      prose-pre:bg-slate-950/80 prose-pre:p-3 prose-pre:text-xs prose-pre:overflow-x-auto
+      prose-blockquote:border-l-2 prose-blockquote:border-cyan-500/50
+      prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-slate-300
+      prose-hr:border-slate-800 prose-table:text-xs
+      prose-th:border prose-th:border-slate-700 prose-th:px-2 prose-th:py-1
+      prose-td:border prose-td:border-slate-800 prose-td:px-2 prose-td:py-1;
+}

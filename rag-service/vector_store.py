@@ -14,32 +14,26 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from langchain_community.vectorstores import FAISS
 
 from config import VECTOR_STORE_BUCKET, VECTOR_STORE_PREFIX, VECTOR_STORE_TMP
 from storage import upload_dir, download_dir, object_exists
 
-HF_TOKEN = os.getenv("HF_TOKEN")
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # runs on HF servers, not here
-
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 MAX_CACHED_STORES = 2
 
 # ── Lazy embedding singleton ───────────────────────────────────
 
-_embeddings: Optional[HuggingFaceInferenceAPIEmbeddings] = None
+_embeddings: Optional[HuggingFaceEmbeddings] = None
 
 
-def _get_embeddings() -> HuggingFaceInferenceAPIEmbeddings:
+def _get_embeddings() -> HuggingFaceEmbeddings:
     global _embeddings
     if _embeddings is None:
-        if not HF_TOKEN:
-            raise RuntimeError("HF_TOKEN env var is not set.")
-        _embeddings = HuggingFaceInferenceAPIEmbeddings(
-            api_key=HF_TOKEN,
-            model_name=EMBEDDING_MODEL,
-        )
+        # Local embedding model via sentence-transformers (no HF Inference API call).
+        _embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
     return _embeddings
 
 
@@ -105,7 +99,11 @@ def _download_and_load(object_key: str) -> FAISS:
     os.makedirs(VECTOR_STORE_TMP, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=VECTOR_STORE_TMP) as tmp:
         path = Path(tmp) / "index"
-        download_dir(bucket=VECTOR_STORE_BUCKET, key=object_key, target=str(path))
+        download_dir(
+            bucket=VECTOR_STORE_BUCKET,
+            key=object_key,
+            target=str(path),
+        )
         return FAISS.load_local(
             str(path),
             _get_embeddings(),
@@ -113,10 +111,18 @@ def _download_and_load(object_key: str) -> FAISS:
         )
 
 
-# ── Public API ─────────────────────────────────────────────────
+# ── Public API ────────────────────────────────────────────────
 
-def create_vector_store(text: str, repo_id: str, scope: str = "repo") -> FAISS:
+
+def create_vector_store(
+    text: str,
+    repo_id: str,
+    scope: str = "repo",
+) -> FAISS:
     chunks = _splitter().create_documents([text])
+    if not chunks:
+        raise ValueError(f"No chunks generated for repo_id={repo_id}. repo_text may be empty or splitting failed.")
+
     vs = FAISS.from_documents(chunks, _get_embeddings())
     _save_and_upload(vs, _object_key(repo_id, scope))
     _cache_put(repo_id, scope, vs)
@@ -127,32 +133,44 @@ def load_vector_store(repo_id: str, scope: str = "repo") -> Optional[FAISS]:
     cached = _cache_get(repo_id, scope)
     if cached is not None:
         return cached
+
     object_key = _object_key(repo_id, scope)
     if not object_exists(bucket=VECTOR_STORE_BUCKET, key=object_key):
         return None
+
     vs = _download_and_load(object_key)
     _cache_put(repo_id, scope, vs)
     return vs
 
 
-def get_or_create_vector_store(text: str, repo_id: str, scope: str = "repo") -> FAISS:
+def get_or_create_vector_store(
+    text: str,
+    repo_id: str,
+    scope: str = "repo",
+) -> FAISS:
     vs = load_vector_store(repo_id, scope)
     if vs is not None:
         return vs
     return create_vector_store(text, repo_id, scope)
 
 
-def update_vector_store(new_text: str, repo_id: str, scope: str = "repo") -> FAISS:
+def update_vector_store(
+    new_text: str,
+    repo_id: str,
+    scope: str = "repo",
+) -> FAISS:
     existing = load_vector_store(repo_id, scope)
     new_chunks = _splitter().create_documents([new_text])
     if not new_chunks:
         return existing
+
     new_vs = FAISS.from_documents(new_chunks, _get_embeddings())
     if existing is not None:
         existing.merge_from(new_vs)
         updated = existing
     else:
         updated = new_vs
+
     _save_and_upload(updated, _object_key(repo_id, scope))
     _cache_put(repo_id, scope, updated)
     return updated

@@ -90,7 +90,7 @@ export async function fetchChatHistoryByUser(userId: string) {
           orderBy: { createdAt: "desc" },
         }),
       ["chat-history-by-user", userId],
-      { tags: ["repositories", `user-${userId}-repositories`] },
+      { tags: [`chat-history-${userId}`] },
     )();
   } catch (err) {
     console.error("DB Error:", err);

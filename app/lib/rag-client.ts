@@ -83,8 +83,11 @@ const errorBody = await res.json().catch(() => null);
     );
   }
 
-  const data = await res.json();
-  return data.answer as string;
+  const data = await res.json().catch(() => null);
+  if (!data || typeof (data as any).answer !== "string") {
+    throw new Error(`RAG chat failed: unexpected response from server (HTTP ${res.status})`);
+  }
+  return (data as any).answer as string;
   //what's different between as string n typecasting to string? both are ways to tell TypeScript that we expect data.answer to be a string, but they have different implications. Using "as string" is a type assertion that tells TypeScript to treat data.answer as a string without performing any runtime checks, so if data.answer is not actually a string at runtime, it could lead to unexpected behavior or errors. On the other hand, using typecasting (e.g., String(data.answer)) would convert data.answer to a string at runtime, which can help prevent errors if data.answer is not already a string, but it may also lead to unintended consequences if data.answer is an object or array that gets converted to a string like "[object Object]" or "1,2,3". In this case, since we expect the RAG service to return a string answer, using "as string" is appropriate as long as we are confident in the response format from the RAG service.
   // TODO : If we want to be extra cautious, we could add a runtime check to ensure that data.answer is indeed a string before returning it.
 }
@@ -140,8 +143,11 @@ export async function generateRepoSummary(repoId: string): Promise<string> {
     throw new Error(`Summary generation failed: ${detail}`);
   }
 
-  const data = await res.json(); // TODO : error handling for json parsing? because if the response is not valid JSON, it will throw an error. We can catch that error and handle it gracefully, maybe by logging the error and returning a default message or rethrowing the error to be handled by the caller.
-  return data.summary as string;
+  const data = await res.json().catch(() => null); // TODO : error handling for json parsing? because if the response is not valid JSON, it will throw an error. We can catch that error and handle it gracefully, maybe by logging the error and returning a default message or rethrowing the error to be handled by the caller.
+  if (!data || typeof (data as any).summary !== "string") {
+    throw new Error(`Summary generation failed: invalid response from server (HTTP ${res.status})`);
+  }
+  return (data as any).summary as string;
 }
 
 
@@ -168,7 +174,10 @@ export async function generateContributorSummary(
     const errorBody = await res.json().catch(() => null);
     const detail = String(errorBody?.detail ?? `HTTP ${res.status}`);
     throw new Error(`Contributor summary failed: ${detail}`);} // TODO : keep error handling consistent of rest functions
-  const data = await res.json();
+  const data = await res.json().catch(() => null);
+  if (!data || typeof (data as any).summary !== "string") {
+    throw new Error(`Contributor summary failed: invalid response from server (HTTP ${res.status})`);
+  }
 
   await prisma.contributor.update({
     where: {

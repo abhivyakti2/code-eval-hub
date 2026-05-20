@@ -22,6 +22,20 @@ export type LoginState = {
   };
   message?: string | null;
 };
+
+export type ForgotPasswordState = {
+  message?: string | null;
+  error?: string | null;
+};
+
+export type ResetPasswordState = {
+  message?: string | null;
+  error?: string | null;
+  errors?: {
+    password?: string[];
+    confirmPassword?: string[];
+  };
+};
 // TODO : move state types to separate file? since they are used in both server actions and UI components. or keep them here since they are closely related to the actions?
 export type AddRepoState = {
   error?: string | null;

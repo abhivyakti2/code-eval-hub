@@ -43,10 +43,6 @@ from rag_pipeline import (
     build_question_chain,
 )
 
-import time
-from groq import RateLimitError as GroqRateLimitError
-
-
 app = FastAPI(title="Code Eval Hub — RAG Service")
 # Initialize the FastAPI application with a title, FastAPI() is a class provided by the FastAPI library. When you call FastAPI(), you are creating an instance of this class, which represents your web application. This instance is used to define your API endpoints and their behavior. The title parameter is an optional argument that sets the title of the API, which is displayed in the automatically generated documentation.
 # we're not using title in any functional way in the code, but it can be 
@@ -71,7 +67,7 @@ class SummarizeRequest(BaseModel):
     repo_id: str
     owner: str
     repo_name: str
-    current_sha: str 
+    current_sha: str
 
 
 class ContributorRequest(BaseModel):
@@ -79,7 +75,7 @@ class ContributorRequest(BaseModel):
     owner: str
     repo_name: str
     contributor_login: str
-    since_sha: str | None = None 
+    since_sha: str | None = None
 # Todo : again we get all contributors info together, and then we can run loop one them one by one to generate their summaries one by one, and send back combned summary together.
 
 
@@ -195,6 +191,8 @@ def ingest_repo(data: IngestRequest):
         return {"status": "ok", "latest_sha": latest_sha, "repo_faiss_uri": repo_faiss_uri}
     
     except Exception as e:
+        # import traceback
+        # traceback.print_exc()  # prints full stack to terminal
         raise HTTPException(status_code=500, detail=f"Ingestion error: {str(e)}")
     # this error too will get sent back as json? yes, when you raise an 
     # HTTPException in FastAPI, it will automatically generate a JSON response 
