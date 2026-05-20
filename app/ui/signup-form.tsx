@@ -1,5 +1,4 @@
 "use client";
-import { lusitana } from "@/app/ui/fonts";
 import {
   AtSymbolIcon,
   KeyIcon,
@@ -42,7 +41,7 @@ export default function SignUpForm() {
   return (
     <form action={formAction} className="space-y-3">
       <div className="flex-1 rounded-lg border border-slate-800 bg-slate-900/80 px-6 pb-4 pt-8 shadow-sm shadow-slate-950/30">
-        <h1 className={`${lusitana.className} mb-3 text-2xl text-slate-100`}>
+        <h1 className="mb-3 text-2xl text-slate-100">
           Create your account.
         </h1>
         <div className="w-full">

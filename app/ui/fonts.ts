@@ -1,4 +1,13 @@
 // fonts used in the application
-import {Inter, Lusitana} from 'next/font/google';
-export const inter = Inter({subsets : ['latin']});
-export const lusitana = Lusitana({subsets : ['latin'], weight : ['400', '700']});
+import { Instrument_Serif, Plus_Jakarta_Sans } from 'next/font/google';
+
+export const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  variable: '--font-plus-jakarta-sans',
+});
+
+export const instrumentSerif = Instrument_Serif({
+  subsets: ['latin'],
+  weight: ['400'],
+  variable: '--font-instrument-serif',
+});

@@ -2,6 +2,7 @@ import { CodeBracketIcon } from "@heroicons/react/24/outline";
 import Link from "next/link";
 import { Suspense } from "react";
 import ForgotPasswordForm from "@/app/ui/forgot-password-form";
+import { instrumentSerif } from "@/app/ui/fonts";
 
 export default function ForgotPasswordPage() {
   return (
@@ -9,7 +10,7 @@ export default function ForgotPasswordPage() {
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-row items-center justify-center gap-3 text-center">
           <CodeBracketIcon className="h-14 w-14 text-blue-400" />
-          <Link href="/" className="text-3xl font-bold text-white">
+          <Link href="/" className={`${instrumentSerif.className} text-3xl font-bold text-white`}>
             CodeEvalHub
           </Link>
         </div>

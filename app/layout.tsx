@@ -1,5 +1,5 @@
 import "@/app/ui/global.css";
-import { inter } from "@/app/ui/fonts";
+import { plusJakartaSans } from "@/app/ui/fonts";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -19,7 +19,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${inter.className} antialiased`}>
+      <body className={`${plusJakartaSans.className} ${plusJakartaSans.variable} antialiased`}>
         <div className="min-h-screen bg-gradient-to-br from-blue-900 to-slate-900 text-slate-100">
           {children}
         </div>

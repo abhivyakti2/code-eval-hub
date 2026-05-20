@@ -10,7 +10,6 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { requestPasswordReset } from "@/app/lib/actions";
 import { ForgotPasswordState } from "@/app/lib/definitions";
-import { lusitana } from "@/app/ui/fonts";
 import { Button } from "@/app/ui/button";
 
 export default function ForgotPasswordForm() {
@@ -25,7 +24,7 @@ export default function ForgotPasswordForm() {
   return (
     <form action={formAction} className="space-y-3">
       <div className="flex-1 rounded-lg border border-slate-800 bg-slate-900/80 px-6 pb-4 pt-8 shadow-sm shadow-slate-950/30">
-        <h1 className={`${lusitana.className} mb-3 text-2xl text-slate-100`}>
+        <h1 className="mb-3 text-2xl text-slate-100">
           Reset your password.
         </h1>
         <p className="mb-5 text-sm text-slate-300">

@@ -1,5 +1,6 @@
 import { CodeBracketIcon } from "@heroicons/react/24/outline";
 import Link from "next/link";
+import { instrumentSerif } from "@/app/ui/fonts";
 
 export default function AuthLayout({
     children,
@@ -12,7 +13,7 @@ export default function AuthLayout({
             <div className="w-full max-w-md">
                 <div className="mb-6 flex flex-row justify-center items-center gap-3 text-center">
                     <CodeBracketIcon className="h-14 w-14 text-blue-400"/>
-                    <Link href="/" className="text-3xl font-bold text-white">
+                    <Link href="/" className={`${instrumentSerif.className} text-3xl font-bold text-white`}>
                         CodeEvalHub
                     </Link>
                 </div>
