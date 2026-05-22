@@ -2,11 +2,8 @@ langchain
 langchain_core
 langchain-community
 langchain-groq
-langchain-huggingface
 langchain-text-splitters
-huggingface-hub
 faiss-cpu
-sentence-transformers
 tiktoken
 python-dotenv
 fastapi

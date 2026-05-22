@@ -58,7 +58,6 @@ export type ChatHistoryItem = {
   id: string;
   repositoryId: string;
   repository: { name: string; githubUrl: string };
-  _count: { messages: number };
 };
 
 export type RepoAction = MessageFeature;

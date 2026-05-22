@@ -105,13 +105,8 @@ model Chat {
   generatedQuestions    GeneratedQuestion[]
   //only here because linked to questions right?
   @@unique([userId, repositoryId])
-  @@index([repositoryId])
-}// TODO : shouldn't it be indexed based on user? same repo will not have more than 1 chat 
-// w/ a user, but different users have chats with same repo, will be easier to display 
-// single user's repos in history if indexed by user no?
-// Makes queries like findMany({ where: { repositoryId } }) faster, but we'd want user's repos i think
-// TODO : generate questions shouldn't be stored i think, they can be in message right since we don't need universal stored summary type stuff? there shouldn't be a generated message table 
-
+  @@index([userId])
+}
 
 //Tracks, per (chat, contributor), the contributor.lastSummarySha that was current the last time the user viewed that contributor's summary
 //Enables : contributor.lastSummarySha!==chatContribViewedShas[contributorId]

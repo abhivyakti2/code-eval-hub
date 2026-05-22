@@ -146,13 +146,14 @@ export default function SignUpForm() {
             </div>
           </div>
         </div>
+<div className="flex justify-center">
 
-        <Button className="mt-4 w-full" disabled={isPending}>
+        <Button className="mt-4 text-white" disabled={isPending}>
           {/* when is state pending? after the form is submitted and before the server action completes */}
           {isPending ? "Creating..." : "Sign Up"}{" "}
           <ArrowRightIcon className="ml-auto h-5 w-5 text-slate-50" />
           {/* the content inside the Button component are children sent automatically to Button component? yes they are passed as children */}
-        </Button>
+        </Button> </div> 
         {/* ? is to check if the field exists. TS safety provided by it*/}
         {state?.message && showMessage && (
           <div className="flex h-8 items-end space-x-1">

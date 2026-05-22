@@ -83,9 +83,6 @@ export async function fetchChatHistoryByUser(userId: string) {
                 githubUrl: true, //to show in search params when clicked? is there anything else needed for search params? in case we do n we fetch it after clicking chat name, then we can get url there as well. if not, i.e this is al needed for url search params of the chat url then keep it here.
               },
             },
-            _count: { // to show number of messages in sidebar
-              select: { messages: true },
-            },
           },
           orderBy: { createdAt: "desc" },
         }),

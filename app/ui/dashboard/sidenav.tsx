@@ -1,6 +1,5 @@
 import Link from "next/link";
 import {
-  CodeBracketIcon,
   HomeIcon,
   PowerIcon,
 } from "@heroicons/react/24/outline";
@@ -8,7 +7,8 @@ import { fetchChatHistoryByUser } from "@/app/lib/data";
 import { auth, signOut } from "@/auth";
 import ChatHistory from "@/app/ui/dashboard/chat-history";
 import { logout } from "@/app/lib/actions";
-import { instrumentSerif } from "@/app/ui/fonts";
+import { playfairDisplay } from "@/app/ui/fonts";
+import { Logo } from "../logo";
 
 export default async function SideNav() {
   const session = await auth(); //to show user specific chat history, we need to get the user id from the session, and then fetch the chat history for that user from the database. if there is no session or user id, we can show a message to login to see chat history. but ig dashboard is not accessable without login, so we can assume that there will be a session and user id when this component is rendered.
@@ -17,8 +17,8 @@ export default async function SideNav() {
   return (
     <div className="flex h-full flex-col px-3 py-4 md:px-2">
       <Link href="/" className="mb-2 flex items-center gap-2 px-1 py-1 text-slate-200 hover:text-cyan-300">
-        <CodeBracketIcon className="h-6 w-6 text-slate-400" />
-        <span className={`${instrumentSerif.className} text-sm font-bold`}>CodeEvalHub</span>
+        <Logo className="h-6 w-6 text-slate-400" />
+        <span className={`${playfairDisplay.className} text-lg font-bold`}>CodeEvalHub</span>
       </Link>
       <div className="flex grow min-h-0 flex-row justify-start space-x-2 md:flex-col md:space-x-0 md:space-y-2">
         <Link

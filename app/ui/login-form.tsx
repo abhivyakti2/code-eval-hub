@@ -132,13 +132,14 @@ export default function LoginForm() {
         <input type="hidden" name="redirectTo" value={callbackUrl} />
         {/* sent as part of the form data to the authenticate action, 
         so that after successful login, we can redirect the user to the callbackUrl. */}
+<div className="flex justify-center">
 
-        <Button className="mt-4 w-full" disabled={isPending}>
+        <Button className="mt-4 text-white" disabled={isPending}>
           {isPending ? "Logging in..." : "Log in"}
           {!isPending && (
             <ArrowRightIcon className="ml-auto h-5 w-5 text-slate-50" />
           )}{" "}
-        </Button>
+        </Button> </div>
         {/*How is this Button linked to form's submission? If you don’t specify a type, then by default:
         A <button> inside a <form> behaves as type="submit"*/}
         {/* TODO : aria-describedby is used to associate the error messages with the correct input field, here message in state isn' linked to a specific input field, what does it contain? */}

@@ -13,31 +13,56 @@ import tempfile
 from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
+import httpx
+import requests
 
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.embeddings import Embeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 
 from config import VECTOR_STORE_BUCKET, VECTOR_STORE_PREFIX, VECTOR_STORE_TMP
 from storage import upload_dir, download_dir, object_exists
 
+
+HF_TOKEN = os.getenv("HF_TOKEN")
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-MAX_CACHED_STORES = 2
-
-# ── Lazy embedding singleton ───────────────────────────────────
-
-_embeddings: Optional[HuggingFaceEmbeddings] = None
 
 
-def _get_embeddings() -> HuggingFaceEmbeddings:
+class BatchedHFEmbeddings(Embeddings):
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{EMBEDDING_MODEL}"
+        headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+        all_embeddings = []
+        with httpx.Client(timeout=60) as client:
+            for i in range(0, len(texts), 32):
+                batch = texts[i:i + 32]
+                r = client.post(url, headers=headers, json={
+                    "inputs": batch,
+                    "options": {"wait_for_model": True}
+                })
+                print(f"[DEBUG] HF response status: {r.status_code}")
+                print(f"[DEBUG] HF response body: {r.text[:300]}")
+                r.raise_for_status()
+                all_embeddings.extend(r.json())
+        return all_embeddings
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_documents([text])[0]
+
+
+_embeddings: Optional[BatchedHFEmbeddings] = None
+
+
+def _get_embeddings() -> BatchedHFEmbeddings:
     global _embeddings
     if _embeddings is None:
-        # Local embedding model via sentence-transformers (no HF Inference API call).
-        _embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+        if not HF_TOKEN:
+            raise RuntimeError("HF_TOKEN env var is not set.")
+        _embeddings = BatchedHFEmbeddings()
     return _embeddings
 
-
 # ── LRU in-process cache ───────────────────────────────────────
+
 
 _vs_cache: OrderedDict[str, FAISS] = OrderedDict()
 

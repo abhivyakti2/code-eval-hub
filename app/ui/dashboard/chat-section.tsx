@@ -542,6 +542,7 @@ useEffect(() => {
                 </p>
               </div>
             )}
+            
             {sendError && retryPayload && (
               <div className="mx-4 mt-3 rounded-md border border-rose-500/20 bg-rose-500/5 px-3 py-2 flex items-center justify-between gap-3">
                 <p className="text-xs text-rose-200/80">{sendError}</p>
