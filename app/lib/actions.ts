@@ -362,29 +362,18 @@ export async function addRepository(
 }
 
 export async function deleteRepository(id: string) {
-  // TODO : should return message in case of error. is it showing error now?
-  // because of the transaction, if any of the operations fail,
-  // it will throw an error and not complete the transaction, so it won't delete the repository or the chats.
-  // We should catch that error and return a message to the user.
-
   const session = await auth();
   let userId = (session?.user as { id?: string } | undefined)?.id;
 
   if (!userId) redirect("/login");
-// restore state n delete repo after authentication? but we only want current user's chats to be deleted, not every user that chatted with this repo
 
-  await prisma.chat.deleteMany({
-    // TODO : why delete many? we only want to delete chat of a user,
-    // not all chats related to that repo, because other users may also have that repo in their dashboard.
-    where: { userId, repositoryId: id },
-  });
+  try {
+    await prisma.chat.deleteMany({
+      where: { userId, repositoryId: id },
+    });
 
-  const stillLinked = await prisma.chat.count({
-    where: { repositoryId: id },
-  });
-
-  if (stillLinked === 0) {
-    await prisma.repository.delete({ where: { id } });
+  } catch (error) {
+    throw new Error("Chat not found or already deleted.");
   }
 
   revalidateTag("repositories", "default");
@@ -400,8 +389,9 @@ export async function sendChatMessageWithFeatures(params: {
   chatId: string;
   userText: string;
   selectedFeatures: MessageFeature[];
+
   // TODO : modify to send prompt specific to the selected actions individually
-}): Promise<string> {
+}): Promise<{ answer: string; repoIngested: boolean; contribIngested: boolean }> {
   const { repoId, chatId, userText, selectedFeatures } = params;
 
   const features =
@@ -434,87 +424,86 @@ export async function sendChatMessageWithFeatures(params: {
     await triggerRepoIngestion(repoId);
   }
 
-  await prisma.message.create({
-    data: {
-      chatId,
-      role: "user",
-      content: userText.trim(),
-      features,
-    },
+
+const userMsg = await prisma.message.create({
+  data: {
+    chatId,
+    role: "user",
+    content: userText.trim(),
+    features,
+  },
+});
+
+const lastCommitSha = await fetchRepoLastCommitSha(repoId);
+if (lastCommitSha) {
+  await prisma.chat.update({
+    where: { id: chatId },
+    data: { lastChatSha: lastCommitSha },
   });
+}
 
-  const lastCommitSha = await fetchRepoLastCommitSha(repoId);
-  if (lastCommitSha) {
-    await prisma.chat.update({
-      where: { id: chatId },
-      data: { lastChatSha: lastCommitSha },
-    });
-  }
-  // TODO : SHOW UI NOTIFICATION LIKE DATE ETC ABOUT REPO WAS UPDATED AT THIS POINT
+const repo = await fetchRepoOwnerName(repoId);
 
-  const repo = await fetchRepoOwnerName(repoId);
+const contributors = await prisma.contributor.findMany({
+  where: { repositoryId: repoId },
+  select: { id: true, githubLogin: true, totalCommits: true },
+  orderBy: [{ totalCommits: "desc" }, { githubLogin: "asc" }],
+});
 
-  // TODO : since we can remove adding contributors at add repo time, we should check if contributors are present in db or not, if not then fetch from github and add to db, and then fetch from db to generate questions, so that we can ensure that we have the latest contributor data in our database before generating questions based on it. This way, if there have been new contributors or changes in contributions since the repo was added, we can reflect that in the generated questions without having to wait for a separate process to add contributors to the database.
-  // TODO : although since project main aim is to show contributor specific summaries, and give specific questions for contibutors, i guess we can do it early
-  // TODO : but get below info if there is some contributor specific feature selected. AND FOR NORMAL CHAT MESSAGES TOO IN UI SHOW OPTION TO SELECT CONTRIBUTOR RELATED QUESTION OR REPO RELATED QUESTION SO WE CAN USE SPECIFIC DATA. SOME AUTO SELECT BASED ON USER'S PROMPT? PLUS MANUAL SELECTION OVERWRITE?
-  const contributors = await prisma.contributor.findMany({
-    where: { repositoryId: repoId },
-    select: { id: true, githubLogin: true, totalCommits: true },
-    orderBy: [{ totalCommits: "desc" }, { githubLogin: "asc" }],
-  });
+const blocks: string[] = [];
 
-  const blocks: string[] = []; // all features response array, we will join them with separator and store as one message in db, and also return the combined response to show in UI. we can also use this array to show different features response in different sections in UI if needed, by keeping track of which block corresponds to which feature.
-
+try {
   if (features.includes("generate_questions")) {
     if (contributors.length === 0) {
       blocks.push("[Evaluation Questions]\nNo contributors found.");
     } else {
-      const questionsByContrib = await Promise.all(
-        contributors.map(async (c) => {
-          const questions = await generateQuestions(
-            repoId,
-            c.id,
-            c.githubLogin,
-            chatId,
-            "contributor",
-          );
-          return `@${c.githubLogin}\n- ${questions.join("\n- ")}`;
-        }),
-      );
-      blocks.push(
-        `[Evaluation Questions]\n${questionsByContrib.join("\n\n")}`,
-      );
+      const questionsByContrib: string[] = [];
+      for (const c of contributors) {
+        const questions = await generateQuestions(
+          repoId,
+          c.id,
+          c.githubLogin,
+          chatId,
+          "contributor",
+        );
+        questionsByContrib.push(`@${c.githubLogin}\n- ${questions.join("\n- ")}`);
+        await new Promise(res => setTimeout(res, 1000));
+      }
+      blocks.push(`[Evaluation Questions]\n${questionsByContrib.join("\n\n")}`);
     }
   }
 
-  // TODO : will need to change this when we attach individual prompt for evaluation question feature, and repo chat prompt.
   if (features.includes("repo_chat")) {
-    const chatPrompt =
-      userText.trim() || "Give me a quick overview of the repository.";
+    const chatPrompt = userText.trim() || "Give me a quick overview of the repository.";
     const answer = await askRepoChat(repoId, chatPrompt);
     blocks.push(`[Repository Chat]\n${answer}`);
   }
-  // TODO : error handling for responses from RAG needed?
+} catch (ragError) {
+  // Roll back user message so it doesn't orphan in DB
+  await prisma.message.delete({ where: { id: userMsg.id } }).catch(() => {});
+  throw ragError;
+}
 
-    const combined = blocks.join("\n\n---------------------------\n\n");
-    await prisma.message.create({
-      data: {
-        chatId,
-        role: "assistant",
-        content: combined,
-        features,
-      },
-    });
-    //TODO : error handling for db write?
+const combined = blocks.join("\n\n---------------------------\n\n");
+await prisma.message.create({
+  data: {
+    chatId,
+    role: "assistant",
+    content: combined,
+    features,
+  },
+});
 
-    if (userId) {
-      revalidateTag(`chat-history-${userId}`, "max");
-    }
-
-    revalidateTag(`repo-${repoId}`, "max");
-    revalidatePath("/dashboard");
-    return combined;
-  } catch (error) {
+if (userId) {
+  revalidateTag(`chat-history-${userId}`, "default");
+}
+revalidateTag(`repo-${repoId}`, "default");
+return {
+  answer: combined,
+  repoIngested: features.includes("repo_chat"),
+  contribIngested: features.includes("generate_questions"),
+}
+} catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("sendChatMessageWithFeatures failed:", message);
 

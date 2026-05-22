@@ -7,6 +7,9 @@ export const metadata: Metadata = {
     template: "%s | CodeEvalHub",
     default: "CodeEvalHub",
   },
+  icons: {
+    icon: '/favicon.ico',
+  },
   description: "AI-powered GitHub repository evaluator with RAG-based chat.",
   metadataBase: new URL("https://code-eval-hub.vercel.app"), //update with actual URL
 };

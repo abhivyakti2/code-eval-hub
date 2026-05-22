@@ -103,45 +103,6 @@ class BatchContributorRequest(BaseModel):
 
 
 # ── Helpers ────────────────────────────────────────────────────
-# TODOs : we should send this kind of info in next.js request body instead 
-# of looking up in DB, to avoid extra latency from DB calls.
-# why _ at start of function name? In Python, a leading underscore in a function
-#  or variable name is a convention that indicates it is intended for internal use 
-# within the module or class. It is a way to signal to other developers that this 
-# function or variable is not part of the public API and should not be accessed 
-# directly from outside the module or class. However, this is just a convention 
-# and does not enforce any actual access restrictions; it is still possible to access 
-# these functions or variables from outside, but it is generally discouraged.
-def _get_owner_repo(repo_id: str) -> tuple[str, str]:
-    """
-    Look up owner/repo from PostgreSQL (repositories table). Pseudocode shown;
-    replace with your DB client of choice.
-    """
-    return "facebook", "react"
-    row = db.fetch_one(
-        "SELECT owner, name FROM \"Repository\" WHERE id = %s",
-        (repo_id,),
-    )
-    if not row:
-        raise HTTPException(status_code=404, detail="Repo not ingested yet.")
-    return row["owner"], row["name"]
-
-
-def _update_repo_metadata(repo_id: str, latest_sha: str, faiss_uri: str):
-    """
-    Persist storage location + sha to PostgreSQL (repositories table).
-    """
-    db.execute(
-        """
-        UPDATE "Repository"
-        SET "lastCommitSha" = %s,
-            "lastIngestedAt" = NOW(),
-            "repoFaissUri" = %s,
-            "repoFaissUploadedAt" = NOW()
-        WHERE id = %s
-        """,
-        (latest_sha, faiss_uri, repo_id),
-    )
 
 
 def run_chain(chain, input_value=None):
@@ -189,10 +150,10 @@ def ingest_repo(data: IngestRequest):
         # Metadata is handled by Next.js action (triggerRepoIngestion),
         # so do not call placeholder db code here.
         return {"status": "ok", "latest_sha": latest_sha, "repo_faiss_uri": repo_faiss_uri}
-    
+
     except Exception as e:
-        import traceback
-        traceback.print_exc()  # prints full stack to terminal
+        # import traceback
+        # traceback.print_exc()  # prints full stack to terminal
         raise HTTPException(status_code=500, detail=f"Ingestion error: {str(e)}")
     # this error too will get sent back as json? yes, when you raise an 
     # HTTPException in FastAPI, it will automatically generate a JSON response 

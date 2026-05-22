@@ -25,7 +25,7 @@ export default async function ChatPage({
   const params = await searchParams;
   //why await? it's a promise, but doesn't it get sent as prop as resolved value? no, when we navigate to this page and pass the search params in the url, we are passing it as a promise because we are using async function to get the search params from the url. so we need to await it here to get the actual values of the search params. if we don't await it, then params will be a promise and we won't be able to access the values of the search params. by awaiting it, we are telling the code to wait until the promise is resolved and then assign the resolved value to params variable.
   const { owner, repo } = parseGithubUrl(params.github_url ?? "");
- //TODO : name is showing issue, and parseGithubUrl just gets the last two parts of the url, so if the url is not in correct format, it will return incorrect values. we can add some validation (say using validateGithubUrl function)to check if the url is in correct format before parsing it, and if it's not in correct format, we can set owner and name to null or empty string, and then handle that case in the UI accordingly. this will prevent any issues that may arise from trying to use incorrect owner and name values when fetching data from github.
+  //TODO : name is showing issue, and parseGithubUrl just gets the last two parts of the url, so if the url is not in correct format, it will return incorrect values. we can add some validation (say using validateGithubUrl function)to check if the url is in correct format before parsing it, and if it's not in correct format, we can set owner and name to null or empty string, and then handle that case in the UI accordingly. this will prevent any issues that may arise from trying to use incorrect owner and name values when fetching data from github.
   const [initialMessages, chatContext] = await Promise.all([
     params?.chatId ? fetchMessagesByChat(params.chatId) : Promise.resolve([]),
     params?.chatId
@@ -56,6 +56,10 @@ export default async function ChatPage({
         repoStoredSummary={chatContext?.repository.repoSummary ?? null}
         chatLastViewedSummarySha={chatContext?.lastViewedSummarySha ?? null}
         chatLastChatSha={chatContext?.lastChatSha ?? null}
+        initialRepoIngested={chatContext?.repository.repoIngested ?? false}
+        initialContribIngested={
+          chatContext?.repository.contribIngested ?? false
+        }
         // Map of contributorId → viewedSha, built from the join table rows
         chatLastViewedContribSummarySha={
           chatContext?.lastViewedContribSummarySha ?? null

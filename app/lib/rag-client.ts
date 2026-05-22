@@ -3,14 +3,15 @@ import { prisma } from "./db";
 import { fetchRepoOwnerName } from "./data";
 import { randomUUID } from "crypto";
 
-const RAG_URL = process.env.RAG_SERVICE_URL ?? "https://code-eval-hub.onrender.com";
+const RAG_URL =
+  process.env.RAG_SERVICE_URL ?? "https://code-eval-hub.onrender.com";
 
-export async function triggerRepoIngestion(repoId: string) {
-  // TODO : should only happen if not ingested or when there's new commits,
-  const repo = await prisma.repository.findUnique({ where: { id: repoId } });
-  if (!repo) throw new Error("Repository not found");
-  //TODO : where are we putting repo in table before ingestion? in addrepository?
-  // TODO : check if latest sha is already ingested here itself. or in add repo.
+export async function triggerRepoIngestion(repoId: string): Promise<void> {
+  const repo = await prisma.repository.findUnique({
+    where: { id: repoId },
+    select: { owner: true, name: true },
+  });
+  if (!repo) throw new Error("Repository not found.");
 
   const res = await fetch(`${RAG_URL}/ingest`, {
     method: "POST",
@@ -19,38 +20,19 @@ export async function triggerRepoIngestion(repoId: string) {
       repo_id: repoId,
       owner: repo.owner,
       repo_name: repo.name,
-      last_sha: repo.lastCommitSha,
     }),
   });
+  if (!res.ok) throw new Error(`Ingestion failed: ${res.statusText}`);
 
-  if (!res.ok) {
-    const errorBody = await res.json().catch(() => null);
-    //we are trying to parse the error response body as JSON,
-    // but if the response is not valid JSON
-    // (for example, if the server returns an HTML error page),
-    // it will throw an error. By catching that error and returning null,
-    // we can avoid crashing our application and handle the error more gracefully.
-    // TODO : but if the response is not json, how will we get the error message to show to user? we won't be able to show specific error message from server, but at least we can show a generic error message that something went wrong with the ingestion, instead of the application crashing or showing an unhandled error.
-
-    const detail = String(errorBody?.detail ?? `HTTP ${res.status}`);
-    //if errorBody is null or doesn't have a detail property, we use the HTTP status code as the detail message.
-    // This ensures that we always have some information about the error to include in our thrown error message.
-    // status code is always present in the response, so we will at least have that information to indicate what went wrong, even if we can't get a specific error message from the server.
-
-    throw new Error(`RAG ingestion failed: ${detail}`);
-  }
-
-  const data = await res.json();
   await prisma.repository.update({
     where: { id: repoId },
-    data: { lastCommitSha: data.latest_sha },
+    data: { repoIngested: true },
   });
-
-  revalidateTag(`repo-${repoId}`, "max");
-  revalidatePath("/dashboard");
 }
-
-export async function askRepoChat(repoId: string, question: string): Promise<string> {
+export async function askRepoChat(
+  repoId: string,
+  question: string,
+): Promise<string> {
   // TODO : why not use await directly here? because we might need to call it again if the first call fails due to the repo not being ingested, so we define it as a separate function that we can call multiple times if needed. If we used await directly here, we would have to duplicate the fetch logic in both the initial call and the retry call, which would be less clean and more error-prone. By defining it as a separate function, we can keep our code DRY (Don't Repeat Yourself) and easier to maintain.
   const call = async () =>
     fetch(`${RAG_URL}/chat`, {
@@ -77,15 +59,16 @@ export async function askRepoChat(repoId: string, question: string): Promise<str
   }
 
   if (!res.ok) {
-const errorBody = await res.json().catch(() => null);
-    const detail = String(errorBody?.detail ?? `HTTP ${res.status}`);    throw new Error(
-      `RAG chat failed: ${detail}`,
-    );
+    const errorBody = await res.json().catch(() => null);
+    const detail = String(errorBody?.detail ?? `HTTP ${res.status}`);
+    throw new Error(`RAG chat failed: ${detail}`);
   }
 
   const data = await res.json().catch(() => null);
   if (!data || typeof (data as any).answer !== "string") {
-    throw new Error(`RAG chat failed: unexpected response from server (HTTP ${res.status})`);
+    throw new Error(
+      `RAG chat failed: unexpected response from server (HTTP ${res.status})`,
+    );
   }
   return (data as any).answer as string;
   //what's different between as string n typecasting to string? both are ways to tell TypeScript that we expect data.answer to be a string, but they have different implications. Using "as string" is a type assertion that tells TypeScript to treat data.answer as a string without performing any runtime checks, so if data.answer is not actually a string at runtime, it could lead to unexpected behavior or errors. On the other hand, using typecasting (e.g., String(data.answer)) would convert data.answer to a string at runtime, which can help prevent errors if data.answer is not already a string, but it may also lead to unintended consequences if data.answer is an object or array that gets converted to a string like "[object Object]" or "1,2,3". In this case, since we expect the RAG service to return a string answer, using "as string" is appropriate as long as we are confident in the response format from the RAG service.
@@ -122,16 +105,16 @@ export async function generateRepoSummary(repoId: string): Promise<string> {
       // why send owner name n reponame? maybe rag service needs it for repo api, and we're not sharing db to rag, it only has bucket
     });
 
-  let res = await summarize(); 
+  let res = await summarize();
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);
-    const detail = errorBody?.detail as string | undefined;  
+    const detail = errorBody?.detail as string | undefined;
     // TODO : inconsistent with other typecasting or doing as string. all need to be uniform.
 
     // check repo embeddings are there or not and ingest.
     if (res.status === 400 && detail?.toLowerCase().includes("not ingested")) {
-      // TODO : check commitsha, if latest then no need to ingest. but carefully only update reposummarysha/ latest sha only after successful ingestions 
+      // TODO : check commitsha, if latest then no need to ingest. but carefully only update reposummarysha/ latest sha only after successful ingestions
       await triggerRepoIngestion(repoId);
       res = await summarize();
     }
@@ -145,11 +128,12 @@ export async function generateRepoSummary(repoId: string): Promise<string> {
 
   const data = await res.json().catch(() => null); // TODO : error handling for json parsing? because if the response is not valid JSON, it will throw an error. We can catch that error and handle it gracefully, maybe by logging the error and returning a default message or rethrowing the error to be handled by the caller.
   if (!data || typeof (data as any).summary !== "string") {
-    throw new Error(`Summary generation failed: invalid response from server (HTTP ${res.status})`);
+    throw new Error(
+      `Summary generation failed: invalid response from server (HTTP ${res.status})`,
+    );
   }
   return (data as any).summary as string;
 }
-
 
 //fetch - requesting rag, not like next.js direct internal request
 export async function generateContributorSummary(
@@ -168,15 +152,21 @@ export async function generateContributorSummary(
       contributor_login: contributorLogin,
     }),
   });
-
   //TODO : here also can't there be chance the repo isn't ingested? check first n ingest first then generate summary, similar to what we did in repo summary generation? because if the contributor data is not ingested, the RAG service might return an error indicating that it cannot generate a summary for the contributor, so we should check for that specific error message and trigger ingestion if needed before retrying the summary generation request.
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);
     const detail = String(errorBody?.detail ?? `HTTP ${res.status}`);
-    throw new Error(`Contributor summary failed: ${detail}`);} // TODO : keep error handling consistent of rest functions
+    throw new Error(`Contributor summary failed: ${detail}`);
+  } // TODO : keep error handling consistent of rest functions
+  await prisma.repository.update({
+    where: { id: repoId },
+    data: { contribIngested: true },
+  });
   const data = await res.json().catch(() => null);
   if (!data || typeof (data as any).summary !== "string") {
-    throw new Error(`Contributor summary failed: invalid response from server (HTTP ${res.status})`);
+    throw new Error(
+      `Contributor summary failed: invalid response from server (HTTP ${res.status})`,
+    );
   }
 
   await prisma.contributor.update({
@@ -196,7 +186,7 @@ export async function generateQuestions(
   repoId: string,
   contributorId: string | null,
   contributorLogin: string,
-  chatId: string,  // TODo : this is for storing? but doesn't message get stored in other function? and we need to remove generated questions model later right? because we can just store the generated questions as a message with specific feature, and then we can also show it in chat if needed, instead of having a separate model for generated questions. we can differentiate it in messages table by using the features column to indicate that it's a generated question message, and we can also include metadata in the content or another column if needed to associate it with a specific contributor or repository.
+  chatId: string, // TODo : this is for storing? but doesn't message get stored in other function? and we need to remove generated questions model later right? because we can just store the generated questions as a message with specific feature, and then we can also show it in chat if needed, instead of having a separate model for generated questions. we can differentiate it in messages table by using the features column to indicate that it's a generated question message, and we can also include metadata in the content or another column if needed to associate it with a specific contributor or repository.
   scope: "contributor" | "repository" = "contributor",
   //why 'repository' = 'contributor'? doesn't that set contributor
   // even when repository is selected? no, it's just a default value.
@@ -238,7 +228,7 @@ export async function generateQuestions(
       questions: data.questions,
     },
   });
-// TODO : error handling for db write? because if it fails, we should handle that gracefully and maybe log the error, but we might still want to return the generated questions even if we fail to store them in the database, depending on how critical it is to have the questions stored. We can catch any errors thrown by the prisma.generatedQuestion.create call and decide how to handle them based on our application's needs.
+  // TODO : error handling for db write? because if it fails, we should handle that gracefully and maybe log the error, but we might still want to return the generated questions even if we fail to store them in the database, depending on how critical it is to have the questions stored. We can catch any errors thrown by the prisma.generatedQuestion.create call and decide how to handle them based on our application's needs.
   return data.questions as string[];
 }
 

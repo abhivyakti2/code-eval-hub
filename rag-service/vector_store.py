@@ -39,8 +39,8 @@ class BatchedHFEmbeddings(Embeddings):
                 r = client.post(url, headers=headers, json={
                     "inputs": batch,
                 })
-                print(f"[DEBUG] HF response status: {r.status_code}")
-                print(f"[DEBUG] HF response body: {r.text[:300]}")
+                # print(f"[DEBUG] HF response status: {r.status_code}")
+                # print(f"[DEBUG] HF response body: {r.text[:300]}")
                 r.raise_for_status()
                 all_embeddings.extend(r.json())
         return all_embeddings

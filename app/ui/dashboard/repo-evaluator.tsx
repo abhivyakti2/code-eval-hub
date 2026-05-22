@@ -51,7 +51,7 @@ export default function RepoEvaluatorSection() {
       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
         <input
           id="repoUrl"
-          name="repoUrl"
+          name="github_url"
           type="url"
           placeholder="https://github.com/owner/repo"
           value={urlInput}

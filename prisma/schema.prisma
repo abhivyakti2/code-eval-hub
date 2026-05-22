@@ -54,6 +54,8 @@ model Repository {
   contributors       Contributor[]
   chats              Chat[]
   generatedQuestions GeneratedQuestion[]
+  repoIngested     Boolean  @default(false)
+  contribIngested  Boolean  @default(false)
   // TODO : per contributor there will be questions, is it accomodating that?
 }
 // TODO : can't id be githubId?
