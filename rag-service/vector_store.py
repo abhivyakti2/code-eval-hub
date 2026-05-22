@@ -14,7 +14,6 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 import httpx
-import requests
 
 from langchain_core.embeddings import Embeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
