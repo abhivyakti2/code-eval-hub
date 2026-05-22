@@ -24,13 +24,14 @@ from config import VECTOR_STORE_BUCKET, VECTOR_STORE_PREFIX, VECTOR_STORE_TMP
 from storage import upload_dir, download_dir, object_exists
 
 
+MAX_CACHED_STORES = 10
 HF_TOKEN = os.getenv("HF_TOKEN")
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 class BatchedHFEmbeddings(Embeddings):
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{EMBEDDING_MODEL}"
+        url = f"https://router.huggingface.co/hf-inference/models/{EMBEDDING_MODEL}/pipeline/feature-extraction"
         headers = {"Authorization": f"Bearer {HF_TOKEN}"}
         all_embeddings = []
         with httpx.Client(timeout=60) as client:
@@ -38,7 +39,6 @@ class BatchedHFEmbeddings(Embeddings):
                 batch = texts[i:i + 32]
                 r = client.post(url, headers=headers, json={
                     "inputs": batch,
-                    "options": {"wait_for_model": True}
                 })
                 print(f"[DEBUG] HF response status: {r.status_code}")
                 print(f"[DEBUG] HF response body: {r.text[:300]}")

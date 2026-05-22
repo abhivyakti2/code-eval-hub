@@ -191,8 +191,8 @@ def ingest_repo(data: IngestRequest):
         return {"status": "ok", "latest_sha": latest_sha, "repo_faiss_uri": repo_faiss_uri}
     
     except Exception as e:
-        # import traceback
-        # traceback.print_exc()  # prints full stack to terminal
+        import traceback
+        traceback.print_exc()  # prints full stack to terminal
         raise HTTPException(status_code=500, detail=f"Ingestion error: {str(e)}")
     # this error too will get sent back as json? yes, when you raise an 
     # HTTPException in FastAPI, it will automatically generate a JSON response 
@@ -311,4 +311,4 @@ def batch_contributor_questions(data: BatchContributorRequest):
 # TODOs : how is update made? in prior embeddings? shouldn't we modify older embedding and add new changes to it and store this updated one? making new vector stores is necessary or we can do updates in old embeddings easily?
 
 # ── Run ────────────────────────────────────────────────────────
-# Start with: uvicorn main:app --reload --port 8000
+# Start with: uvicorn main:app --reload --port 8000 or uvicorn main:app --reload --log-level debug
