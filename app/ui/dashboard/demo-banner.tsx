@@ -29,7 +29,7 @@ export default function DemoBanner() {
         action={dispatch}
         className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center"
       >
-        <input type="hidden" name="repoUrl" value={DEMO_REPO_URL} />
+        <input type="hidden" name="github_url" value={DEMO_REPO_URL} />
         <button
           type="submit"
           disabled={isPending}

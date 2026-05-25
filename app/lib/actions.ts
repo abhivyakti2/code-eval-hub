@@ -420,10 +420,15 @@ export async function sendChatMessageWithFeatures(params: {
   // TODO : like check latestsha while sending each message, and if not present, also check ingestion, and if not up to date show on ui option to chat with latest sha, then ingest again. and otherwise on first message, ingest latest sha if not already most recent ingestion.
   // TODO : or is it possible when user clicks chat with repo in repo evaluator itself, while chat is created, ingestion also starts in parallel, not like in sync, while chat page is created n rendered n user writes first message, tlll then in background the ingestion can take place.
   // TODO : but should we go for ingesting contributor commits, or repo code, or both? because for some features like generating questions based on contributors, we might only need contributor data to be ingested, and for repo chat, we might need the code embeddings to be ingested. so we can have more granular ingestion that only ingests the necessary data based on the features selected by the user, which can save time and resources compared to ingesting everything at once.
-  if (priorUserMsgCount === 0) {
-    await triggerRepoIngestion(repoId);
-  }
-
+  const needsRepoIngestion = features.includes("repo_chat");
+const repoRow = await prisma.repository.findUnique({
+  where: { id: repoId },
+  select: { repoIngested: true },
+});
+const repoAlreadyIngested = repoRow?.repoIngested ?? false;
+if (needsRepoIngestion && !repoAlreadyIngested) {
+  await triggerRepoIngestion(repoId);
+}
 
 const userMsg = await prisma.message.create({
   data: {
@@ -478,6 +483,12 @@ try {
     const answer = await askRepoChat(repoId, chatPrompt);
     blocks.push(`[Repository Chat]\n${answer}`);
   }
+  if (needsRepoIngestion && !repoAlreadyIngested) {
+  await prisma.repository.update({
+    where: { id: repoId },
+    data: { repoIngested: true },
+  });
+}
 } catch (ragError) {
   // Roll back user message so it doesn't orphan in DB
   await prisma.message.delete({ where: { id: userMsg.id } }).catch(() => {});

@@ -203,10 +203,6 @@ def contributor_summary(data: ContributorRequest):
 @app.post("/generate-questions")
 def generate_questions(data: QuestionRequest):
     # Load repo-level + contributor-level vectors, combine context
-    repo_vs = load_vector_store(data.repo_id, "repo")
-    if repo_vs is None:
-        raise HTTPException(status_code=400, detail="Repo not ingested.")
-
     contributor_text = build_contributor_text(data.owner, data.repo_name, data.contributor_login)
     contrib_vs = get_or_create_vector_store(
         contributor_text, data.repo_id, scope=data.contributor_login

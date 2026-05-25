@@ -2,6 +2,8 @@
 
 import { RepoAction, ChatMessage } from "@/app/lib/definitions";
 import { useEffect, useRef, useLayoutEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
 import { Button } from "@/app/ui/button";
 import { PaperAirplaneIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import ReactMarkdown from "react-markdown";
@@ -74,8 +76,8 @@ export default function ChatSection({
   const [viewMode, setViewMode] = useState<ViewMode>("chat");
   const [summarySection, setSummarySection] = useState<SummarySection>("repo");
 
-const [liveGithubSha, setLiveGithubSha] = useState<string | null>(initialLiveGithubSha ?? null);
-const [shaReady, setShaReady] = useState(!!initialLiveGithubSha);
+  const [liveGithubSha, setLiveGithubSha] = useState<string | null>(initialLiveGithubSha ?? null);
+  const [shaReady, setShaReady] = useState(!!initialLiveGithubSha);
   const [repoSummaryText, setRepoSummaryText] = useState<string | null>(
     repoStoredSummary ?? null,
   );
@@ -192,7 +194,9 @@ const [shaReady, setShaReady] = useState(!!initialLiveGithubSha);
     liveGithubSha !== null &&
     chatLastChatSha !== null &&
     chatLastChatSha !== liveGithubSha;
-useLayoutEffect(() => {
+
+  useLayoutEffect(() => {
+
   const container = messagesContainerRef.current;
   if (!container) return;
   requestAnimationFrame(() => {
@@ -455,10 +459,14 @@ setLiveGithubSha(initialLiveGithubSha ?? null);
     await handleGenerateAllContribSummaries();
   }
 
+  const router = useRouter();
+
   async function handleSend(
+
     overrideText?: string,
     overrideActions?: RepoAction[],
   ) {
+
     const userText = (overrideText ?? input).trim().toLowerCase();
     const selected = (overrideActions ?? selectedActions).length
       ? (overrideActions ?? selectedActions)
@@ -506,6 +514,7 @@ setLiveGithubSha(initialLiveGithubSha ?? null);
         ...prev,
         { role: "assistant", content: result.answer },
       ]);
+      router.refresh();
     } catch (error) {
       if (activeChatIdRef.current !== requestChatId) return;
       setMessages((prev) => prev.slice(0, -1));
@@ -669,9 +678,14 @@ setLiveGithubSha(initialLiveGithubSha ?? null);
                       <p className="mb-1 text-xs font-medium text-gray-500">
                         Repository Summary
                       </p>
-                      <p className="whitespace-pre-wrap text-sm">
-                        {repoSummaryText}
-                      </p>
+                      <div className="markdown-content">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          rehypePlugins={[rehypeHighlight]}
+                        >
+                          {repoSummaryText}
+                        </ReactMarkdown>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -699,9 +713,14 @@ setLiveGithubSha(initialLiveGithubSha ?? null);
                           <p className="mb-1 text-xs font-medium text-gray-500">
                             @{c.githubLogin}
                           </p>
-                          <p className="whitespace-pre-wrap text-sm">
-                            {contribText}
-                          </p>
+                          <div className="markdown-content">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              rehypePlugins={[rehypeHighlight]}
+                            >
+                              {contribText}
+                            </ReactMarkdown>
+                          </div>
                         </div>
                       </div>
                     );
@@ -804,7 +823,7 @@ setLiveGithubSha(initialLiveGithubSha ?? null);
               {sending && (
                 <div className="flex justify-start">
                   <div className="rounded-lg px-4 py-3 bg-[rgb(33,44,62)] text-slate-100 min-w-[280px]">
-                    <p className="text-sm animate-pulse">Generating...</p>
+                    <p className="text-sm animate-pulse-fade">Generating...</p>
 
                     {/* Contrib ingestion steps — inside same bubble */}
                     {activeSelectedActionsRef.current.includes(
